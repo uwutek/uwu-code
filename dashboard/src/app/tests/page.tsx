@@ -257,8 +257,37 @@ function CaseEditor({
   );
 }
 
+function VideoModal({ src, label, onClose }: { src: string; label: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.85)" }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-3xl rounded-lg overflow-hidden space-y-0"
+        style={{ border: "1px solid rgba(0,212,255,0.3)", background: "#0a0e1a" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: "1px solid rgba(30,45,74,0.8)" }}>
+          <span className="text-xs font-medium" style={{ color: "#e2e8f0" }}>{label}</span>
+          <button onClick={onClose} className="text-xs px-2 py-1 rounded" style={{ color: "#4a5568" }}>✕ close</button>
+        </div>
+        <video
+          src={src}
+          controls
+          autoPlay
+          className="w-full"
+          style={{ maxHeight: "70vh", background: "#000" }}
+        />
+      </div>
+    </div>
+  );
+}
+
 function RunResultCard({ run, defaultOpen }: { run: RunResult; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
+  const [videoSrc, setVideoSrc] = useState<{ src: string; label: string } | null>(null);
 
   const statusColor =
     run.failed > 0
@@ -268,6 +297,8 @@ function RunResultCard({ run, defaultOpen }: { run: RunResult; defaultOpen?: boo
       : "#00ff88";
 
   return (
+    <>
+    {videoSrc && <VideoModal src={videoSrc.src} label={videoSrc.label} onClose={() => setVideoSrc(null)} />}
     <div
       className="rounded overflow-hidden"
       style={{ border: "1px solid rgba(30,45,74,0.8)" }}
@@ -360,10 +391,8 @@ function RunResultCard({ run, defaultOpen }: { run: RunResult; defaultOpen?: boo
                     </p>
                   )}
                   {r.recording && (
-                    <a
-                      href={`/api/tests/recordings?file=${encodeURIComponent(r.recording)}`}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      onClick={() => setVideoSrc({ src: `/api/tests/recordings?file=${encodeURIComponent(r.recording!)}`, label: r.label })}
                       className="inline-flex items-center gap-1 mt-1 text-xs px-2 py-0.5 rounded"
                       style={{ background: "rgba(0,212,255,0.08)", color: "#00d4ff", border: "1px solid rgba(0,212,255,0.2)" }}
                     >
@@ -371,8 +400,8 @@ function RunResultCard({ run, defaultOpen }: { run: RunResult; defaultOpen?: boo
                         <circle cx="12" cy="12" r="10" />
                         <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none" />
                       </svg>
-                      Recording
-                    </a>
+                      Watch Recording
+                    </button>
                   )}
                 </div>
               </div>
@@ -381,6 +410,7 @@ function RunResultCard({ run, defaultOpen }: { run: RunResult; defaultOpen?: boo
         </div>
       )}
     </div>
+    </>
   );
 }
 

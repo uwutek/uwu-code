@@ -67,47 +67,54 @@ async def run_case(
         case_rec_dir = recording_dir / case["id"]
         case_rec_dir.mkdir(parents=True, exist_ok=True)
 
+    profile = BrowserProfile(
+        headless=True,
+        keep_alive=False,
+        chromium_sandbox=False,
+        args=["--no-sandbox", "--disable-dev-shm-usage"],
+        save_recording_path=str(case_rec_dir) if case_rec_dir else None,
+    )
+    agent = Agent(task=task, llm=llm, browser_profile=profile)
+    passed = False
+    detail = "No result returned"
+    exc_info: str | None = None
+
     try:
-        profile = BrowserProfile(
-            headless=True,
-            keep_alive=False,
-            chromium_sandbox=False,
-            args=["--no-sandbox", "--disable-dev-shm-usage"],
-            save_recording_path=str(case_rec_dir) if case_rec_dir else None,
-        )
-        agent = Agent(task=task, llm=llm, browser_profile=profile)
         result = await agent.run()
         final = result.final_result() if result else None
         passed = result.is_successful() if result else False
         detail = str(final) if final else "No result returned"
-        duration = time.time() - t0
+    except Exception as exc:
+        exc_info = str(exc)
+        detail = str(exc)
+    finally:
+        # Always close the agent so Playwright flushes the video to disk
+        try:
+            await agent.close()
+        except Exception:
+            pass
+
+    duration = time.time() - t0
+    if exc_info:
+        print(f"[{label}] ERROR ({duration:.1f}s): {exc_info}")
+    else:
         print(f"[{label}] {'PASS' if passed else 'FAIL'} ({duration:.1f}s): {detail[:100]}")
 
-        # Find video file if recorded
-        recording_rel: str | None = None
-        if case_rec_dir:
-            videos = list(case_rec_dir.glob("*.webm")) + list(case_rec_dir.glob("*.mp4"))
-            if videos:
-                recording_rel = str(videos[0].relative_to(RESULTS_DIR))
+    # Find video file if recorded
+    recording_rel: str | None = None
+    if case_rec_dir:
+        videos = list(case_rec_dir.glob("*.webm")) + list(case_rec_dir.glob("*.mp4"))
+        if videos:
+            recording_rel = str(videos[0].relative_to(RESULTS_DIR))
 
-        return CaseResult(
-            id=case["id"],
-            label=label,
-            passed=passed,
-            detail=detail,
-            duration_s=round(duration, 1),
-            recording=recording_rel,
-        )
-    except Exception as exc:
-        duration = time.time() - t0
-        print(f"[{label}] ERROR ({duration:.1f}s): {exc}")
-        return CaseResult(
-            id=case["id"],
-            label=label,
-            passed=False,
-            detail=str(exc),
-            duration_s=round(duration, 1),
-        )
+    return CaseResult(
+        id=case["id"],
+        label=label,
+        passed=passed,
+        detail=detail,
+        duration_s=round(duration, 1),
+        recording=recording_rel,
+    )
 
 
 async def main() -> None:
