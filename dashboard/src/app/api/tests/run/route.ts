@@ -30,12 +30,38 @@ function findUv(): string {
   try {
     return execSync("which uv", { encoding: "utf-8" }).trim();
   } catch {
-    return "uv"; // fallback, will fail with a clear error
+    return "uv";
   }
 }
 
 function runningFile(project: string) {
   return path.join(RESULTS_DIR, project, "running.json");
+}
+
+/** Check if the PID stored in the lock file is actually still running */
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0); // signal 0 = just check existence
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isActuallyRunning(lockFile: string): boolean {
+  if (!fs.existsSync(lockFile)) return false;
+  try {
+    const info = JSON.parse(fs.readFileSync(lockFile, "utf-8"));
+    if (!info.pid) return false; // old-style lock without pid — treat as stale
+    if (!isPidAlive(info.pid)) {
+      fs.rmSync(lockFile, { force: true }); // clean up stale lock
+      return false;
+    }
+    return true;
+  } catch {
+    fs.rmSync(lockFile, { force: true });
+    return false;
+  }
 }
 
 /** POST /api/tests/run?project=slug  — spawn test runner in background */
@@ -49,7 +75,7 @@ export async function POST(req: NextRequest) {
 
   const lockFile = runningFile(project);
 
-  if (fs.existsSync(lockFile)) {
+  if (isActuallyRunning(lockFile)) {
     return NextResponse.json(
       { error: "Tests already running for this project" },
       { status: 409 }
@@ -61,7 +87,6 @@ export async function POST(req: NextRequest) {
   fs.mkdirSync(projectResultsDir, { recursive: true });
 
   const runId = new Date().toISOString().replace(/[:.]/g, "").replace("Z", "Z");
-  fs.writeFileSync(lockFile, JSON.stringify({ run_id: runId, started_at: new Date().toISOString() }));
 
   const projectEnv = loadProjectEnv(project);
   const uvBin = findUv();
@@ -77,14 +102,14 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  proc.on("exit", () => {
-    fs.rmSync(lockFile, { force: true });
-  });
+  // Write lock file with PID so we can verify process is still alive later
+  fs.writeFileSync(
+    lockFile,
+    JSON.stringify({ run_id: runId, started_at: new Date().toISOString(), pid: proc.pid })
+  );
 
-  proc.on("error", () => {
-    fs.rmSync(lockFile, { force: true });
-  });
-
+  proc.on("exit", () => fs.rmSync(lockFile, { force: true }));
+  proc.on("error", () => fs.rmSync(lockFile, { force: true }));
   proc.unref();
 
   return NextResponse.json({ run_id: runId, status: "started" });
@@ -100,16 +125,15 @@ export async function GET(req: NextRequest) {
   }
 
   const lockFile = runningFile(project);
-  const running = fs.existsSync(lockFile);
 
-  if (running) {
-    try {
-      const info = JSON.parse(fs.readFileSync(lockFile, "utf-8"));
-      return NextResponse.json({ running: true, ...info });
-    } catch {
-      return NextResponse.json({ running: true });
-    }
+  if (!isActuallyRunning(lockFile)) {
+    return NextResponse.json({ running: false });
   }
 
-  return NextResponse.json({ running: false });
+  try {
+    const info = JSON.parse(fs.readFileSync(lockFile, "utf-8"));
+    return NextResponse.json({ running: true, ...info });
+  } catch {
+    return NextResponse.json({ running: true });
+  }
 }
