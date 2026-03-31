@@ -148,7 +148,7 @@ def run_coding_task(task: dict) -> tuple[bool | None, str]:
     # Build ordered list of commands to try
     # --dangerously-skip-permissions required: Claude refuses to run as root
     claude_cmd = ["claude", "--dangerously-skip-permissions", "--print", desc]
-    opencode_cmd = ["opencode", desc]
+    opencode_cmd = ["opencode", "run", desc]
 
     if pref == "claude":
         commands = [claude_cmd]

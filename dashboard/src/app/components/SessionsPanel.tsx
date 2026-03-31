@@ -7,7 +7,6 @@ interface Props {
   sessions: TmuxSession[];
   ports: PortInfo[];
   loading: boolean;
-  onExpose: (port: PortInfo) => void;
 }
 
 function formatAge(created: number): string {
@@ -58,24 +57,12 @@ function WindowRow({
   window,
   sessionName,
   ports,
-  onExpose,
 }: {
   window: TmuxWindow;
   sessionName: string;
   ports: PortInfo[];
-  onExpose: (port: PortInfo) => void;
 }) {
-  const [exposePort, setExposePort] = useState("");
-  const [showExposeInput, setShowExposeInput] = useState(false);
   const matchedPorts = getPortsForWindow(ports, sessionName, window.windowName);
-
-  function handleManualExpose() {
-    const p = parseInt(exposePort, 10);
-    if (!p) return;
-    onExpose({ port: p, processName: window.windowName, pid: window.panePid ?? 0, matchedSession: sessionName, matchedWindow: window.windowName } as PortInfo);
-    setShowExposeInput(false);
-    setExposePort("");
-  }
 
   return (
     <div
@@ -163,78 +150,20 @@ function WindowRow({
         </div>
       )}
 
-      {/* Matched ports + expose buttons */}
       <div className="flex flex-wrap items-center gap-1 mt-0.5">
         {matchedPorts.map((p) => (
-          <div key={p.port} className="flex items-center gap-0.5">
-            <span
-              className="badge"
-              style={{
-                background: "rgba(0, 212, 255, 0.1)",
-                color: "#00d4ff",
-                border: "1px solid rgba(0, 212, 255, 0.25)",
-              }}
-            >
-              :{p.port}
-            </span>
-            <button
-              onClick={() => onExpose(p)}
-              className="badge transition-colors hover:opacity-80"
-              style={{
-                background: "rgba(168, 85, 247, 0.1)",
-                color: "#a855f7",
-                border: "1px solid rgba(168, 85, 247, 0.25)",
-                cursor: "pointer",
-              }}
-              title={`Expose port ${p.port} publicly`}
-            >
-              Expose
-            </button>
-          </div>
-        ))}
-
-        {/* Manual expose for any port */}
-        {!showExposeInput ? (
-          <button
-            onClick={() => setShowExposeInput(true)}
-            className="badge transition-colors hover:opacity-80"
+          <span
+            key={p.port}
+            className="badge"
             style={{
-              background: "rgba(30, 45, 74, 0.5)",
-              color: "#94a3b8",
-              border: "1px solid rgba(30, 45, 74, 0.8)",
-              cursor: "pointer",
+              background: "rgba(0, 212, 255, 0.1)",
+              color: "#00d4ff",
+              border: "1px solid rgba(0, 212, 255, 0.25)",
             }}
           >
-            + Expose port…
-          </button>
-        ) : (
-          <div className="flex items-center gap-1">
-            <input
-              autoFocus
-              type="number"
-              value={exposePort}
-              onChange={(e) => setExposePort(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleManualExpose(); if (e.key === "Escape") setShowExposeInput(false); }}
-              placeholder="port"
-              className="px-1.5 py-0.5 rounded text-xs outline-none w-20 font-mono"
-              style={{ background: "rgba(10,14,26,0.8)", border: "1px solid rgba(168,85,247,0.4)", color: "#e2e8f0" }}
-            />
-            <button
-              onClick={handleManualExpose}
-              className="badge"
-              style={{ background: "rgba(168,85,247,0.15)", color: "#a855f7", border: "1px solid rgba(168,85,247,0.3)", cursor: "pointer" }}
-            >
-              Go
-            </button>
-            <button
-              onClick={() => setShowExposeInput(false)}
-              className="badge"
-              style={{ background: "rgba(30,45,74,0.5)", color: "#94a3b8", border: "1px solid rgba(30,45,74,0.8)", cursor: "pointer" }}
-            >
-              ✕
-            </button>
-          </div>
-        )}
+            :{p.port}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -244,12 +173,10 @@ function SessionCard({
   session,
   ports,
   defaultExpanded,
-  onExpose,
 }: {
   session: TmuxSession;
   ports: PortInfo[];
   defaultExpanded: boolean;
-  onExpose: (port: PortInfo) => void;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const sessionPorts = getPortsForSession(ports, session.name);
@@ -378,7 +305,6 @@ function SessionCard({
                 window={w}
                 sessionName={session.name}
                 ports={ports}
-                onExpose={onExpose}
               />
             ))
           )}
@@ -388,7 +314,7 @@ function SessionCard({
   );
 }
 
-export default function SessionsPanel({ sessions, ports, loading, onExpose }: Props) {
+export default function SessionsPanel({ sessions, ports, loading }: Props) {
   return (
     <div className="flex flex-col gap-4">
       {/* Panel header */}
@@ -483,7 +409,6 @@ export default function SessionsPanel({ sessions, ports, loading, onExpose }: Pr
               session={session}
               ports={ports}
               defaultExpanded={false}
-              onExpose={onExpose}
             />
           ))}
         </div>

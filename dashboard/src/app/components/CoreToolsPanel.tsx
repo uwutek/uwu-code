@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { PortInfo } from "../page";
 import UnexposeModal from "./UnexposeModal";
 
@@ -15,6 +15,7 @@ interface Props {
   publicIp: string;
   onExpose: (port: PortInfo) => void;
   onUnexpose: (port: number) => void;
+  refreshToken?: number;
 }
 
 type SortKey = "port" | "processName" | "matchedSession";
@@ -51,8 +52,9 @@ export default function CoreToolsPanel({
   publicIp,
   onExpose,
   onUnexpose,
+  refreshToken,
 }: Props) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [exposedPorts, setExposedPorts] = useState<ExposedPort[]>([]);
   const [exposedLoading, setExposedLoading] = useState(false);
   const [unexposePort, setUnexposePort] = useState<number | null>(null);
@@ -62,7 +64,7 @@ export default function CoreToolsPanel({
   const [sortKey, setSortKey] = useState<SortKey>("port");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  const fetchExposedPorts = async () => {
+  const fetchExposedPorts = useCallback(async () => {
     setExposedLoading(true);
     try {
       const res = await fetch("/api/expose");
@@ -73,7 +75,11 @@ export default function CoreToolsPanel({
     } finally {
       setExposedLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchExposedPorts();
+  }, [fetchExposedPorts, refreshToken]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {

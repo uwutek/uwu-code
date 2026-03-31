@@ -177,6 +177,7 @@ export default function DashboardPage() {
   const [exposePort, setExposePort] = useState<PortInfo | null>(null);
   const [exposeResult, setExposeResult] = useState<ExposeResult | null>(null);
   const [exposeLoading, setExposeLoading] = useState(false);
+  const [exposedRefreshToken, setExposedRefreshToken] = useState(0);
 
   const isMounted = useRef(true);
   useEffect(() => {
@@ -268,6 +269,17 @@ export default function DashboardPage() {
       });
       const data: ExposeResult = await res.json();
       setExposeResult(data);
+
+      if (data.success) {
+        fetch("/api/ports")
+          .then((r) => r.json())
+          .then((d) => {
+            const rawPorts: PortInfo[] = d.ports ?? [];
+            setPorts(correlatePorts(rawPorts, sessions));
+          })
+          .catch(() => {});
+        setExposedRefreshToken((t) => t + 1);
+      }
     } catch {
       setExposeResult({
         success: false,
@@ -293,6 +305,7 @@ export default function DashboardPage() {
         setPorts(correlatePorts(rawPorts, sessions));
       })
       .catch(() => {});
+    setExposedRefreshToken((t) => t + 1);
   }, [sessions]);
 
   return (
@@ -316,9 +329,10 @@ export default function DashboardPage() {
         publicIp={systemData?.publicIp ?? ""}
         onExpose={handleExpose}
         onUnexpose={handleUnexpose}
+        refreshToken={exposedRefreshToken}
       />
 
-      <SessionsPanel sessions={sessions} ports={ports} loading={loading} onExpose={handleExpose} />
+      <SessionsPanel sessions={sessions} ports={ports} loading={loading} />
 
       {/* Row 4: Projects Panel (full width) */}
       <ProjectsPanel
