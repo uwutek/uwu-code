@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
 
   // Read model preference from settings.json
   const settings = readSettings();
-  const openrouterModel = settings.models?.openclaw ?? "anthropic/claude-3-5-haiku";
+  const openrouterModel = settings.models?.openclaw ?? "openrouter/free";
 
   const full: ChatMessage[] = [{ role: "system", content: SYSTEM }, ...messages];
   let lastError = "";

@@ -481,8 +481,8 @@ function ModelPicker({
 
 function ModelsSection() {
   const [models, setModels] = useState<ORModel[]>([]);
-  const [testsModel, setTestsModel] = useState("anthropic/claude-3-5-haiku");
-  const [openclawModel, setOpenclawModel] = useState("anthropic/claude-opus-4");
+  const [testsModel, setTestsModel] = useState("openrouter/free");
+  const [openclawModel, setOpenclawModel] = useState("openrouter/free");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);

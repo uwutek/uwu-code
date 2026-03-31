@@ -62,7 +62,7 @@ export async function GET(_req: NextRequest) {
   const settings = readSettings();
   return NextResponse.json({
     models,
-    selected: settings.models ?? { tests: "anthropic/claude-3-5-haiku", openclaw: "anthropic/claude-opus-4" },
+    selected: settings.models ?? { tests: "openrouter/free", openclaw: "openrouter/free" },
     error: error || undefined,
   });
 }
