@@ -11,11 +11,16 @@ interface Task {
   description: string;
   workspace?: string;
   preferred_tool?: "claude" | "opencode" | "auto";
-  status: "pending" | "running" | "completed" | "failed" | "scheduled";
+  status: "pending" | "running" | "completed" | "failed" | "scheduled" | "manual";
+  schedule_mode?: "anytime" | "once" | "daily" | "weekly" | "manual";
+  schedule_time?: string;
+  schedule_weekday?: number;
   created_at: string;
   scheduled_at?: string;
   started_at?: string;
   completed_at?: string;
+  last_run_at?: string;
+  last_run_status?: "completed" | "failed";
   report?: string;
 }
 
@@ -49,6 +54,7 @@ const STATUS_COLOR: Record<string, string> = {
   completed: "#00ff88",
   failed:    "#ff4444",
   scheduled: "#a855f7",
+  manual:    "#f97316",
 };
 
 const STATUS_BG: Record<string, string> = {
@@ -57,7 +63,26 @@ const STATUS_BG: Record<string, string> = {
   completed: "rgba(0,255,136,0.1)",
   failed:    "rgba(255,68,68,0.1)",
   scheduled: "rgba(168,85,247,0.1)",
+  manual:    "rgba(249,115,22,0.1)",
 };
+
+const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function scheduleLabel(task: Task): string {
+  const mode = task.schedule_mode ?? "anytime";
+  if (mode === "daily") {
+    return task.schedule_time ? `daily at ${task.schedule_time} UTC` : "daily";
+  }
+  if (mode === "weekly") {
+    const day = typeof task.schedule_weekday === "number" && WEEK_DAYS[task.schedule_weekday]
+      ? WEEK_DAYS[task.schedule_weekday]
+      : "weekly";
+    return task.schedule_time ? `${day} ${task.schedule_time} UTC` : `${day}`;
+  }
+  if (mode === "once") return "one-time";
+  if (mode === "manual") return "manual";
+  return "queue now";
+}
 
 // ── Report Modal ──────────────────────────────────────────────────────────────
 
@@ -65,13 +90,16 @@ function ReportModal({ task, onClose }: { task: Task; onClose: () => void }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
       style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
-      onClick={onClose}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div
         className="w-full max-w-4xl max-h-[85vh] flex flex-col rounded-lg overflow-hidden"
         style={{ background: "#0f1629", border: "1px solid #1e2d4a" }}
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div
@@ -95,6 +123,7 @@ function ReportModal({ task, onClose }: { task: Task; onClose: () => void }) {
           </div>
           <button
             onClick={onClose}
+            type="button"
             className="text-xs px-2 py-1 rounded ml-3 flex-shrink-0"
             style={{ background: "rgba(30,45,74,0.6)", color: "#94a3b8", border: "1px solid #1e2d4a" }}
           >
@@ -147,12 +176,12 @@ function TaskCard({
   task,
   onDelete,
   onViewReport,
-  onRequeue,
+  onQueueNow,
 }: {
   task: Task;
   onDelete: () => void;
   onViewReport: () => void;
-  onRequeue: () => void;
+  onQueueNow: () => void;
 }) {
   const color = STATUS_COLOR[task.status] ?? "#94a3b8";
   const bg    = STATUS_BG[task.status]    ?? "rgba(30,45,74,0.2)";
@@ -214,9 +243,15 @@ function TaskCard({
         {task.preferred_tool && task.preferred_tool !== "auto" && (
           <span style={{ color: "#ffd700" }}>{task.preferred_tool}</span>
         )}
+        <span style={{ color: "#f59e0b" }}>{scheduleLabel(task)}</span>
         <span>{timeAgo(task.created_at)}</span>
         {task.status === "scheduled" && task.scheduled_at && (
-          <span style={{ color: "#a855f7" }}>runs at {fmtDate(task.scheduled_at)}</span>
+          <span style={{ color: "#a855f7" }}>next run {fmtDate(task.scheduled_at)}</span>
+        )}
+        {task.status === "manual" && task.last_run_at && (
+          <span style={{ color: task.last_run_status === "failed" ? "#ff4444" : "#00ff88" }}>
+            last run {timeAgo(task.last_run_at)}
+          </span>
         )}
         {task.started_at && !task.completed_at && (
           <span style={{ color: "#00d4ff" }}>started {timeAgo(task.started_at)}</span>
@@ -236,6 +271,7 @@ function TaskCard({
         {!isActive && (
           <button
             onClick={onViewReport}
+            type="button"
             className="text-xs px-2.5 py-1 rounded transition-opacity hover:opacity-80"
             style={{
               background: "rgba(0,212,255,0.1)",
@@ -246,9 +282,10 @@ function TaskCard({
             View Report
           </button>
         )}
-        {(task.status === "failed" || task.status === "scheduled") && (
+        {(task.status === "failed" || task.status === "scheduled" || task.status === "manual") && (
           <button
-            onClick={onRequeue}
+            onClick={onQueueNow}
+            type="button"
             className="text-xs px-2.5 py-1 rounded transition-opacity hover:opacity-80"
             style={{
               background: "rgba(255,215,0,0.08)",
@@ -256,11 +293,12 @@ function TaskCard({
               border: "1px solid rgba(255,215,0,0.2)",
             }}
           >
-            Requeue
+            {task.status === "manual" ? "Add to Queue" : "Queue Now"}
           </button>
         )}
         <button
           onClick={onDelete}
+          type="button"
           className="text-xs px-2.5 py-1 rounded transition-opacity hover:opacity-80 ml-auto"
           style={{
             background: "rgba(255,68,68,0.08)",
@@ -302,25 +340,106 @@ function NewTaskForm({
   const [type, setType] = useState<"coding" | "research">("research");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [scheduleMode, setScheduleMode] = useState<"anytime" | "once" | "daily" | "weekly" | "manual">("anytime");
+  const [oneTimeAt, setOneTimeAt] = useState(() => {
+    const d = new Date(Date.now() + 5 * 60 * 1000);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const hour = String(d.getHours()).padStart(2, "0");
+    const minute = String(d.getMinutes()).padStart(2, "0");
+    return `${year}-${month}-${day}T${hour}:${minute}`;
+  });
+  const [dailyTime, setDailyTime] = useState("09:00");
+  const [weeklyDay, setWeeklyDay] = useState(() => new Date().getDay());
+  const [weeklyTime, setWeeklyTime] = useState("09:00");
   const [workspace, setWorkspace] = useState(workspaces[0]?.path ?? "/opt/workspaces");
   const [tool, setTool] = useState<"auto" | "claude" | "opencode">("auto");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  function nextDailyIso(time: string): string {
+    const [hour, minute] = time.split(":").map(Number);
+    const now = new Date();
+    const candidate = new Date();
+    candidate.setHours(hour, minute, 0, 0);
+    if (candidate.getTime() <= now.getTime()) {
+      candidate.setDate(candidate.getDate() + 1);
+    }
+    return candidate.toISOString();
+  }
+
+  function nextWeeklyIso(day: number, time: string): string {
+    const [hour, minute] = time.split(":").map(Number);
+    const now = new Date();
+    const candidate = new Date();
+    const delta = (day - candidate.getDay() + 7) % 7;
+    candidate.setDate(candidate.getDate() + delta);
+    candidate.setHours(hour, minute, 0, 0);
+    if (candidate.getTime() <= now.getTime()) {
+      candidate.setDate(candidate.getDate() + 7);
+    }
+    return candidate.toISOString();
+  }
+
   async function submit() {
     if (!description.trim()) { setError("Description is required"); return; }
+
+    const toUtcTime = (date: Date) => {
+      const hh = String(date.getUTCHours()).padStart(2, "0");
+      const mm = String(date.getUTCMinutes()).padStart(2, "0");
+      return `${hh}:${mm}`;
+    };
+
+    const payload: Record<string, unknown> = {
+      title: title.trim() || undefined,
+      type,
+      description: description.trim(),
+      workspace: type === "coding" ? workspace : undefined,
+      preferred_tool: type === "coding" ? tool : undefined,
+      schedule_mode: scheduleMode,
+    };
+
+    if (scheduleMode === "once") {
+      const oneTimeDate = new Date(oneTimeAt);
+      if (Number.isNaN(oneTimeDate.getTime())) {
+        setError("Choose a valid one-time run date");
+        return;
+      }
+      const iso = oneTimeDate.toISOString();
+      payload.one_time_at = iso;
+      payload.scheduled_at = iso;
+    }
+
+    if (scheduleMode === "daily") {
+      if (!dailyTime) {
+        setError("Choose a daily run time");
+        return;
+      }
+      const nextIso = nextDailyIso(dailyTime);
+      const nextDate = new Date(nextIso);
+      payload.schedule_time = toUtcTime(nextDate);
+      payload.scheduled_at = nextIso;
+    }
+
+    if (scheduleMode === "weekly") {
+      if (!weeklyTime) {
+        setError("Choose a weekly run time");
+        return;
+      }
+      const nextIso = nextWeeklyIso(weeklyDay, weeklyTime);
+      const nextDate = new Date(nextIso);
+      payload.schedule_time = toUtcTime(nextDate);
+      payload.schedule_weekday = nextDate.getUTCDay();
+      payload.scheduled_at = nextIso;
+    }
+
     setLoading(true); setError("");
     try {
       const res = await fetch("/api/scheduler/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim() || undefined,
-          type,
-          description: description.trim(),
-          workspace: type === "coding" ? workspace : undefined,
-          preferred_tool: type === "coding" ? tool : undefined,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) { const d = await res.json(); setError(d.error ?? "Failed"); return; }
       onCreated();
@@ -343,6 +462,7 @@ function NewTaskForm({
         {(["research", "coding"] as const).map((t) => (
           <button
             key={t}
+            type="button"
             onClick={() => setType(t)}
             className="flex-1 py-2 rounded text-sm font-medium transition-all"
             style={{
@@ -358,10 +478,90 @@ function NewTaskForm({
         ))}
       </div>
 
+      <div className="flex flex-col gap-1">
+        <label className="text-xs" htmlFor="schedule-mode" style={{ color: "#4a5568" }}>Schedule</label>
+        <div id="schedule-mode" className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          {([
+            { key: "anytime", label: "Queue Now" },
+            { key: "once", label: "One-Time" },
+            { key: "daily", label: "Daily" },
+            { key: "weekly", label: "Weekly" },
+            { key: "manual", label: "Manual" },
+          ] as const).map((mode) => (
+            <button
+              key={mode.key}
+              type="button"
+              onClick={() => setScheduleMode(mode.key)}
+              className="py-2 rounded text-xs font-medium transition-all"
+              style={{
+                background: scheduleMode === mode.key ? "rgba(249,115,22,0.15)" : "rgba(30,45,74,0.3)",
+                color: scheduleMode === mode.key ? "#f59e0b" : "#94a3b8",
+                border: `1px solid ${scheduleMode === mode.key ? "rgba(249,115,22,0.4)" : "rgba(30,45,74,0.5)"}`,
+              }}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {scheduleMode === "once" && (
+        <div className="flex flex-col gap-1">
+          <label className="text-xs" htmlFor="once-at" style={{ color: "#4a5568" }}>Run at (local time)</label>
+          <input
+            id="once-at"
+            type="datetime-local"
+            style={INPUT}
+            value={oneTimeAt}
+            onChange={(e) => setOneTimeAt(e.target.value)}
+          />
+        </div>
+      )}
+
+      {scheduleMode === "daily" && (
+        <div className="flex flex-col gap-1">
+          <label className="text-xs" htmlFor="daily-time" style={{ color: "#4a5568" }}>Daily time (local)</label>
+          <input
+            id="daily-time"
+            type="time"
+            style={INPUT}
+            value={dailyTime}
+            onChange={(e) => setDailyTime(e.target.value)}
+          />
+        </div>
+      )}
+
+      {scheduleMode === "weekly" && (
+        <div className="flex gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" htmlFor="weekly-day" style={{ color: "#4a5568" }}>Day</label>
+            <select
+              id="weekly-day"
+              style={{ ...SELECT, width: "120px" }}
+              value={weeklyDay}
+              onChange={(e) => setWeeklyDay(Number(e.target.value))}
+            >
+              {WEEK_DAYS.map((day, idx) => <option key={day} value={idx}>{day}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs" htmlFor="weekly-time" style={{ color: "#4a5568" }}>Time</label>
+            <input
+              id="weekly-time"
+              type="time"
+              style={{ ...INPUT, width: "120px" }}
+              value={weeklyTime}
+              onChange={(e) => setWeeklyTime(e.target.value)}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Title */}
       <div className="flex flex-col gap-1">
-        <label className="text-xs" style={{ color: "#4a5568" }}>Title (optional)</label>
+        <label className="text-xs" htmlFor="task-title" style={{ color: "#4a5568" }}>Title (optional)</label>
         <input
+          id="task-title"
           style={INPUT}
           placeholder="Short label…"
           value={title}
@@ -373,8 +573,9 @@ function NewTaskForm({
       {type === "coding" && (
         <div className="flex gap-3">
           <div className="flex flex-col gap-1 flex-1">
-            <label className="text-xs" style={{ color: "#4a5568" }}>Workspace</label>
+            <label className="text-xs" htmlFor="workspace" style={{ color: "#4a5568" }}>Workspace</label>
             <select
+              id="workspace"
               style={SELECT}
               value={workspace}
               onChange={(e) => setWorkspace(e.target.value)}
@@ -388,8 +589,9 @@ function NewTaskForm({
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{ color: "#4a5568" }}>Tool</label>
+            <label className="text-xs" htmlFor="tool" style={{ color: "#4a5568" }}>Tool</label>
             <select
+              id="tool"
               style={{ ...SELECT, width: "120px" }}
               value={tool}
               onChange={(e) => setTool(e.target.value as "auto" | "claude" | "opencode")}
@@ -404,10 +606,11 @@ function NewTaskForm({
 
       {/* Description */}
       <div className="flex flex-col gap-1">
-        <label className="text-xs" style={{ color: "#4a5568" }}>
+        <label className="text-xs" htmlFor="description" style={{ color: "#4a5568" }}>
           {type === "coding" ? "What should be done?" : "Research question / prompt"}
         </label>
         <textarea
+          id="description"
           style={{ ...INPUT, minHeight: "100px", resize: "vertical" }}
           placeholder={
             type === "coding"
@@ -428,6 +631,7 @@ function NewTaskForm({
       <div className="flex gap-2">
         <button
           onClick={submit}
+          type="button"
           disabled={loading}
           className="flex-1 py-2 rounded text-sm font-semibold transition-opacity"
           style={{
@@ -437,10 +641,11 @@ function NewTaskForm({
             cursor: loading ? "not-allowed" : "pointer",
           }}
         >
-          {loading ? "Creating…" : "Queue Task"}
+          {loading ? "Creating…" : scheduleMode === "anytime" ? "Queue Task" : scheduleMode === "manual" ? "Create Manual Task" : "Schedule Task"}
         </button>
         <button
           onClick={onCancel}
+          type="button"
           className="px-4 py-2 rounded text-sm transition-opacity hover:opacity-70"
           style={{ background: "rgba(30,45,74,0.4)", color: "#94a3b8", border: "1px solid rgba(30,45,74,0.7)" }}
         >
@@ -505,21 +710,22 @@ export default function SchedulerPage() {
     fetchTasks();
   }
 
-  async function requeueTask(id: string) {
+  async function queueNowTask(id: string) {
     await fetch(`/api/scheduler/tasks/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "pending", scheduled_at: undefined, started_at: undefined }),
+      body: JSON.stringify({ action: "queue_now" }),
     });
     fetchTasks();
   }
 
-  const active    = tasks.filter((t) => ["pending", "running", "scheduled"].includes(t.status));
+  const active    = tasks.filter((t) => ["pending", "running", "scheduled", "manual"].includes(t.status));
   const completed = tasks.filter((t) => ["completed", "failed"].includes(t.status));
 
   const pending  = active.filter((t) => t.status === "pending").length;
   const running  = active.filter((t) => t.status === "running").length;
   const sched    = active.filter((t) => t.status === "scheduled").length;
+  const manual   = active.filter((t) => t.status === "manual").length;
 
   return (
     <div className="max-w-screen-lg mx-auto px-4 py-6 space-y-6">
@@ -531,6 +737,7 @@ export default function SchedulerPage() {
             style={{ background: "rgba(255,215,0,0.1)", border: "1px solid rgba(255,215,0,0.25)" }}
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="#ffd700" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <title>Scheduler</title>
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
               <line x1="16" y1="2" x2="16" y2="6" />
               <line x1="8" y1="2" x2="8" y2="6" />
@@ -564,9 +771,15 @@ export default function SchedulerPage() {
                 {sched} scheduled
               </span>
             )}
+            {manual > 0 && (
+              <span className="px-2 py-1 rounded" style={{ background: "rgba(249,115,22,0.1)", color: "#f97316", border: "1px solid rgba(249,115,22,0.2)" }}>
+                {manual} manual
+              </span>
+            )}
           </div>
           <button
             onClick={() => setShowForm((v) => !v)}
+            type="button"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-semibold transition-all"
             style={{
               background: showForm ? "rgba(30,45,74,0.5)" : "rgba(0,255,136,0.12)",
@@ -594,6 +807,7 @@ export default function SchedulerPage() {
           <button
             key={t}
             onClick={() => setTab(t)}
+            type="button"
             className="px-4 py-2 text-sm font-medium transition-colors relative"
             style={{
               color: tab === t ? "#e2e8f0" : "#4a5568",
@@ -620,6 +834,7 @@ export default function SchedulerPage() {
               style={{ color: "#4a5568" }}
             >
               <svg className="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <title>No tasks</title>
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
                 <line x1="16" y1="2" x2="16" y2="6" />
                 <line x1="8" y1="2" x2="8" y2="6" />
@@ -639,7 +854,7 @@ export default function SchedulerPage() {
                   task={task}
                   onDelete={() => deleteTask(task.id)}
                   onViewReport={() => setReport(task)}
-                  onRequeue={() => requeueTask(task.id)}
+                  onQueueNow={() => queueNowTask(task.id)}
                 />
               ))
           )}
