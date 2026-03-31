@@ -234,7 +234,11 @@ async def main() -> None:
         pass
 
     if openrouter_key:
-        model = saved_tests_model or env.get("OPENROUTER_MODEL", "google/gemma-3-4b-it:free")
+        fallback_model = env.get("OPENROUTER_FALLBACK_MODEL", "meta-llama/llama-3.1-8b-instruct:free")
+        model = saved_tests_model or env.get("OPENROUTER_MODEL", fallback_model)
+        if isinstance(model, str) and model.startswith("google/gemma-"):
+            print(f"WARN: OpenRouter model '{model}' is incompatible with current browser-use prompt format; using fallback '{fallback_model}'")
+            model = fallback_model
         llm = ChatOpenRouter(model=model, api_key=openrouter_key, timeout=180)
         llm_label = f"OpenRouter / {model}"
     elif anthropic_key:
