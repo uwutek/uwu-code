@@ -31,7 +31,17 @@ export async function GET(_req: NextRequest) {
       });
       if (res.ok) {
         const data = await res.json();
-        models = (data.data ?? []).map((m: { id: string; name: string; context_length?: number; pricing?: { prompt?: string; completion?: string } }) => {
+        // Exclude non-chat models (media/audio/image generation)
+        const NON_CHAT = /lyria|imagen|dall-e|stable-?diffusion|midjourney|flux|sora|whisper|tts|embedding|rerank/i;
+
+        models = (data.data ?? [])
+          .filter((m: { id: string; modality?: string; architecture?: { modality?: string } }) => {
+            if (NON_CHAT.test(m.id)) return false;
+            const modality = m.modality ?? m.architecture?.modality ?? "";
+            if (modality && !modality.includes("text")) return false;
+            return true;
+          })
+          .map((m: { id: string; name: string; context_length?: number; pricing?: { prompt?: string; completion?: string } }) => {
           const promptPrice = parseFloat(m.pricing?.prompt ?? "0");
           const completionPrice = parseFloat(m.pricing?.completion ?? "0");
           const free = promptPrice === 0 && completionPrice === 0;
@@ -75,8 +85,8 @@ export async function POST(req: NextRequest) {
   writeSettings({
     ...settings,
     models: {
-      tests: tests ?? settings.models?.tests ?? "anthropic/claude-3-5-haiku",
-      openclaw: openclaw ?? settings.models?.openclaw ?? "anthropic/claude-opus-4",
+      tests: tests ?? settings.models?.tests ?? "openrouter/free",
+      openclaw: openclaw ?? settings.models?.openclaw ?? "openrouter/free",
     },
   });
   return NextResponse.json({ ok: true });

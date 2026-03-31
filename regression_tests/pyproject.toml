@@ -3,7 +3,7 @@ name = "uwu-tester"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    "browser-use>=0.1.0",
+    "browser-use[video]>=0.1.0",
     "langchain-anthropic>=0.3.0",
     "langchain-openai>=0.2.0",
     "playwright>=1.40.0",
