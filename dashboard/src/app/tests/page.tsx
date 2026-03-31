@@ -34,7 +34,7 @@ function McpModal({
 
   const dir = regressionDir ?? "/opt/vps-dashboard/regression_tests";
 
-  const mcpJsonConfig = JSON.stringify(
+  const mcpJsonContent = JSON.stringify(
     {
       mcpServers: {
         "uwu-tester": {
@@ -49,7 +49,7 @@ function McpModal({
     2
   );
 
-  const opencodeMcpConfig = JSON.stringify(
+  const opencodeMcpContent = JSON.stringify(
     {
       mcp: {
         "uwu-tester": {
@@ -62,9 +62,16 @@ function McpModal({
     2
   );
 
-  // Run as non-root uwu user — claude refuses --dangerously-skip-permissions as root
-  const claudeCmd = `sudo -u uwu claude --dangerously-skip-permissions --mcp-config /home/uwu/.mcp.json "Use the uwu-tester MCP server to run tests for the '${project}' project, then give me a detailed pass/fail report for each test case."`;
-  const opencodeCmd = `sudo -u uwu opencode "Use the uwu-tester MCP server to run tests for the '${project}' project, then give me a detailed pass/fail report for each test case."`;
+  // Shell command that writes the config file — user runs this once, then done
+  const claudeWriteConfig = `sudo tee /home/uwu/.mcp.json << 'MCPEOF'\n${mcpJsonContent}\nMCPEOF`;
+  const opencodeWriteConfig = `sudo mkdir -p /home/uwu/.config/opencode\nsudo tee /home/uwu/.config/opencode/config.json << 'MCPEOF'\n${opencodeMcpContent}\nMCPEOF`;
+
+  const prompt = `Use the uwu-tester MCP server to run tests for the '${project}' project, then give me a detailed pass/fail report for each test case.`;
+
+  // Claude reads .mcp.json from cwd automatically — no --mcp-config flag needed.
+  // Run as uwu (non-root) so --dangerously-skip-permissions is accepted.
+  const claudeCmd = `sudo -u uwu bash -c 'cd /home/uwu && claude --dangerously-skip-permissions -p "${prompt}"'`;
+  const opencodeCmd = `sudo -u uwu bash -c 'cd /home/uwu && opencode "${prompt}"'`;
 
   const isClaudeCode = target === "claude";
   const accent = isClaudeCode ? "#f97316" : "#a855f7";
@@ -79,8 +86,8 @@ function McpModal({
     </svg>
   );
 
-  const configBlock = isClaudeCode ? mcpJsonConfig : opencodeMcpConfig;
-  const configKey = isClaudeCode ? "Save to /home/uwu/.mcp.json" : "Save to /home/uwu/.config/opencode/config.json";
+  const configBlock = isClaudeCode ? claudeWriteConfig : opencodeWriteConfig;
+  const configKey = isClaudeCode ? "Run once to create /home/uwu/.mcp.json" : "Run once to create opencode config";
   const cmdKey = isClaudeCode ? "Run in terminal (as root)" : "Run in terminal (as root)";
   const cmd = isClaudeCode ? claudeCmd : opencodeCmd;
 
