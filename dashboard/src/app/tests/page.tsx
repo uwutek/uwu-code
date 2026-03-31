@@ -983,6 +983,7 @@ export default function TestsPage() {
   const [config, setConfig] = useState<TestConfig | null>(null);
   const [results, setResults] = useState<RunResult[]>([]);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
+  const [dismissedRunIds, setDismissedRunIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -1243,11 +1244,35 @@ export default function TestsPage() {
 
   const allCaseIds = config?.test_cases.map((c) => c.id) ?? [];
   const resolvedRunCaseIds = resolveRunCaseIds(config, runMode, selectedWorkflowIds, selectedCaseIds);
-  const runningAgentRuns = agentRuns.filter((run) => run.status === "running");
+  const visibleAgentRuns = agentRuns.filter((run) => !dismissedRunIds.includes(run.run_id));
+  const runningAgentRuns = visibleAgentRuns.filter((run) => run.status === "running");
+  const recentFinishedAgentRuns = visibleAgentRuns
+    .filter((run) => run.status !== "running")
+    .slice(0, 3);
 
   const handleBackgroundStarted = useCallback(
-    ({ target, project }: { target: McpTarget; runId: string; project: string }) => {
+    ({ target, runId, project }: { target: McpTarget; runId: string; project: string }) => {
       if (project !== selectedProject) return;
+
+      if ((target === "claude" || target === "opencode") && runId) {
+        const startedAt = new Date().toISOString();
+        setAgentRuns((prev) => {
+          if (prev.some((run) => run.run_id === runId)) return prev;
+          return [
+            {
+              run_id: runId,
+              project,
+              target,
+              status: "running",
+              started_at: startedAt,
+              workflow_ids: [],
+              case_ids: [],
+            },
+            ...prev,
+          ];
+        });
+      }
+
       if (target === "api") {
         setRunning(true);
         if (pollRef.current) clearInterval(pollRef.current);
@@ -1290,7 +1315,7 @@ export default function TestsPage() {
         </a>
       </div>
 
-      {(running || runningAgentRuns.length > 0) && (
+      {(running || runningAgentRuns.length > 0 || recentFinishedAgentRuns.length > 0) && (
         <div className="fixed top-4 right-4 z-40 w-full max-w-sm">
           <div
             className="rounded-lg p-3 space-y-2"
@@ -1301,7 +1326,7 @@ export default function TestsPage() {
             }}
           >
             <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#00d4ff" }}>
-              Running
+              Background Runs
             </div>
 
             {running && selectedProject && (
@@ -1320,6 +1345,27 @@ export default function TestsPage() {
                     <path d="M21 12a9 9 0 1 1-9-9" />
                   </svg>
                   <span className="font-mono">{run.target} · {run.project}</span>
+                </div>
+                <div className="text-[11px] mt-0.5" style={{ color: "#94a3b8" }}>
+                  started {formatTime(run.started_at)}
+                </div>
+              </div>
+            ))}
+
+            {recentFinishedAgentRuns.map((run) => (
+              <div key={run.run_id} className="rounded px-2 py-1.5" style={{ background: run.status === "completed" ? "rgba(0,255,136,0.08)" : "rgba(255,68,68,0.08)", border: `1px solid ${run.status === "completed" ? "rgba(0,255,136,0.3)" : "rgba(255,68,68,0.3)"}` }}>
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span style={{ color: run.status === "completed" ? "#00ff88" : "#ff4444" }} className="font-mono">
+                    {run.target} · {run.project} · {run.status}
+                  </span>
+                  <button
+                    onClick={() => setDismissedRunIds((prev) => (prev.includes(run.run_id) ? prev : [...prev, run.run_id]))}
+                    className="w-5 h-5 rounded text-[10px]"
+                    style={BTN(true, "#94a3b8")}
+                    title="Dismiss"
+                  >
+                    ✕
+                  </button>
                 </div>
                 <div className="text-[11px] mt-0.5" style={{ color: "#94a3b8" }}>
                   started {formatTime(run.started_at)}
