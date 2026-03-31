@@ -482,7 +482,7 @@ export default function SessionsPanel({ sessions, ports, loading, onExpose }: Pr
               key={session.name}
               session={session}
               ports={ports}
-              defaultExpanded={i === 0}
+              defaultExpanded={false}
               onExpose={onExpose}
             />
           ))}

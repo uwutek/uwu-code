@@ -338,7 +338,7 @@ function GroupSection({
 }: {
   group: { name: string; path: string; projects: { name: string; path: string; lastModified: string; branch: string; remoteUrl: string }[] };
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="card overflow-hidden">

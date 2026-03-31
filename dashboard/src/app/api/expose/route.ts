@@ -4,8 +4,10 @@ import { promisify } from "util";
 
 const execAsync = promisify(exec);
 
+const EXPOSED_PORTS_FILE = "/opt/vps-dashboard/exposed_ports.json";
+
 async function runCommand(
-  cmd: string
+  cmd: string,
 ): Promise<{ stdout: string; stderr: string; success: boolean }> {
   try {
     const { stdout, stderr } = await execAsync(cmd, { timeout: 10000 });
@@ -35,6 +37,30 @@ async function getPublicIp(): Promise<string> {
   return "YOUR_VPS_IP";
 }
 
+async function getUfwStatus(): Promise<string[]> {
+  const { stdout } = await runCommand("sudo ufw status | grep '^Anywhere' | awk '{print $2}' | sort -u");
+  return stdout
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => /^\d+$/.test(l));
+}
+
+// GET /api/expose — list currently exposed ports
+export async function GET() {
+  try {
+    const publicIp = await getPublicIp();
+    const exposedPorts = await getUfwStatus();
+    return NextResponse.json({
+      publicIp,
+      ports: exposedPorts.map((p) => ({ port: parseInt(p, 10), url: `http://${publicIp}:${p}` })),
+    });
+  } catch (error) {
+    console.error("[/api/expose GET] Error:", error);
+    return NextResponse.json({ publicIp: "YOUR_VPS_IP", ports: [] });
+  }
+}
+
+// POST /api/expose — expose a port (ufw allow)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -43,16 +69,13 @@ export async function POST(req: NextRequest) {
     if (!port || isNaN(port) || port < 1 || port > 65535) {
       return NextResponse.json(
         { success: false, message: "Invalid port number" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    // Get public IP for the URL
     const publicIp = await getPublicIp();
     const url = `http://${publicIp}:${port}`;
 
-    // Try to open the firewall with ufw
-    // This requires that Next.js process has sudo rights for ufw, or ufw is configured with NOPASSWD
     const ufwResult = await runCommand(`sudo ufw allow ${port}/tcp`);
 
     if (ufwResult.success) {
@@ -63,7 +86,6 @@ export async function POST(req: NextRequest) {
         ufwOutput: ufwResult.stdout || ufwResult.stderr,
       });
     } else {
-      // ufw failed — still return the URL, just note firewall wasn't updated
       const isUfwMissing =
         ufwResult.stderr.includes("command not found") ||
         ufwResult.stderr.includes("not found");
@@ -78,10 +100,52 @@ export async function POST(req: NextRequest) {
       });
     }
   } catch (error) {
-    console.error("[/api/expose] Error:", error);
+    console.error("[/api/expose POST] Error:", error);
     return NextResponse.json(
       { success: false, message: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
+    );
+  }
+}
+
+// DELETE /api/expose — stop exposing a port (ufw delete allow)
+export async function DELETE(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const port = parseInt(body.port, 10);
+
+    if (!port || isNaN(port) || port < 1 || port > 65535) {
+      return NextResponse.json(
+        { success: false, message: "Invalid port number" },
+        { status: 400 },
+      );
+    }
+
+    const publicIp = await getPublicIp();
+    const url = `http://${publicIp}:${port}`;
+
+    const ufwResult = await runCommand(`sudo ufw delete allow ${port}/tcp`);
+
+    if (ufwResult.success) {
+      return NextResponse.json({
+        success: true,
+        url,
+        message: `Port ${port} exposure removed from firewall.`,
+        ufwOutput: ufwResult.stdout || ufwResult.stderr,
+      });
+    } else {
+      return NextResponse.json({
+        success: false,
+        url,
+        message: `Failed to remove firewall rule: ${ufwResult.stderr}`,
+        ufwOutput: ufwResult.stderr,
+      });
+    }
+  } catch (error) {
+    console.error("[/api/expose DELETE] Error:", error);
+    return NextResponse.json(
+      { success: false, message: "Internal server error" },
+      { status: 500 },
     );
   }
 }

@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import SystemHeader from "./components/SystemHeader";
 import SessionsPanel from "./components/SessionsPanel";
-import PortsPanel from "./components/PortsPanel";
 import CorePanel from "./components/CorePanel";
+import CoreToolsPanel from "./components/CoreToolsPanel";
 import ProjectsPanel from "./components/ProjectsPanel";
 import ExposeModal from "./components/ExposeModal";
 
@@ -284,6 +284,17 @@ export default function DashboardPage() {
     setExposeResult(null);
   };
 
+  const handleUnexpose = useCallback((_port: number) => {
+    // Refresh ports list after unexpose
+    fetch("/api/ports")
+      .then((r) => r.json())
+      .then((d) => {
+        const rawPorts: PortInfo[] = d.ports ?? [];
+        setPorts(correlatePorts(rawPorts, sessions));
+      })
+      .catch(() => {});
+  }, [sessions]);
+
   return (
     <div className="max-w-screen-2xl mx-auto px-4 py-6 space-y-6">
       {/* Row 1: System Header (full width) */}
@@ -295,16 +306,17 @@ export default function DashboardPage() {
         onRefresh={() => fetchAll(true)}
       />
 
-      {/* Row 2: Core Panel (full width, starts collapsed) */}
-      <CorePanel data={coreData} defaultCollapsed={true}>
-        <PortsPanel
-          ports={ports}
-          loading={loading}
-          publicIp={systemData?.publicIp ?? ""}
-          onExpose={handleExpose}
-          defaultCollapsed={true}
-        />
-      </CorePanel>
+      {/* Row 2: Core Panel — System Services + Docker Containers */}
+      <CorePanel data={coreData} defaultCollapsed={true} />
+
+      {/* Core Tools — Exposed Ports + Listening Ports */}
+      <CoreToolsPanel
+        ports={ports}
+        loading={loading}
+        publicIp={systemData?.publicIp ?? ""}
+        onExpose={handleExpose}
+        onUnexpose={handleUnexpose}
+      />
 
       <SessionsPanel sessions={sessions} ports={ports} loading={loading} onExpose={handleExpose} />
 
