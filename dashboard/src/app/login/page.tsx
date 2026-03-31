@@ -12,9 +12,10 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
+    const nextPath = new URLSearchParams(window.location.search).get("next") || "/";
     // If already authed or auth disabled, go to dashboard
     fetch("/api/auth/check").then(async (res) => {
-      if (res.ok) router.replace("/");
+      if (res.ok) router.replace(nextPath);
       else setChecking(false);
     }).catch(() => setChecking(false));
   }, [router]);
@@ -29,7 +30,8 @@ export default function LoginPage() {
         body: JSON.stringify({ username, password }),
       });
       if (res.ok) {
-        router.replace("/");
+        const nextPath = new URLSearchParams(window.location.search).get("next") || "/";
+        router.replace(nextPath);
       } else {
         const d = await res.json();
         setError(d.error ?? "Invalid credentials");
@@ -59,6 +61,7 @@ export default function LoginPage() {
             style={{ background: "linear-gradient(135deg, #00ff88 0%, #00d4ff 100%)" }}
           >
             <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="#0a0e1a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <title>Login</title>
               <polyline points="4 17 10 11 4 5" />
               <line x1="12" y1="19" x2="20" y2="19" />
             </svg>
@@ -78,8 +81,9 @@ export default function LoginPage() {
           style={{ background: "#0f1629", border: "1px solid #1e2d4a" }}
         >
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs" style={{ color: "#4a5568" }}>Username</label>
+            <label className="text-xs" htmlFor="username" style={{ color: "#4a5568" }}>Username</label>
             <input
+              id="username"
               type="text"
               autoComplete="username"
               value={username}
@@ -95,8 +99,9 @@ export default function LoginPage() {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs" style={{ color: "#4a5568" }}>Password</label>
+            <label className="text-xs" htmlFor="password" style={{ color: "#4a5568" }}>Password</label>
             <input
+              id="password"
               type="password"
               autoComplete="current-password"
               value={password}

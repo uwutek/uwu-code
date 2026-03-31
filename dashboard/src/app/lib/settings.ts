@@ -38,10 +38,9 @@ export function generateToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-/** Returns true if auth is disabled or the cookie is valid */
 export function checkAuth(req: NextRequest): boolean {
   const settings = readSettings();
-  if (!settings.username) return true; // auth not configured
+  if (!settings.username) return false;
   const token = req.cookies.get("uwu_session")?.value;
   return !!token && token === settings.session_token;
 }

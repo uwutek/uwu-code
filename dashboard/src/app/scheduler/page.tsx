@@ -27,6 +27,7 @@ interface Task {
 interface WorkspaceOption {
   name: string;
   path: string;
+  kind: "group" | "project";
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -329,11 +330,9 @@ const INPUT = {
 const SELECT = { ...INPUT };
 
 function NewTaskForm({
-  workspaces,
   onCreated,
   onCancel,
 }: {
-  workspaces: WorkspaceOption[];
   onCreated: () => void;
   onCancel: () => void;
 }) {
@@ -353,10 +352,79 @@ function NewTaskForm({
   const [dailyTime, setDailyTime] = useState("09:00");
   const [weeklyDay, setWeeklyDay] = useState(() => new Date().getDay());
   const [weeklyTime, setWeeklyTime] = useState("09:00");
-  const [workspace, setWorkspace] = useState(workspaces[0]?.path ?? "/opt/workspaces");
+  const [workspace, setWorkspace] = useState("/opt/workspaces");
   const [tool, setTool] = useState<"auto" | "claude" | "opencode">("auto");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerError, setPickerError] = useState("");
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [workspaceOptions, setWorkspaceOptions] = useState<WorkspaceOption[]>([]);
+
+  async function loadWorkspaceOptions() {
+    setPickerLoading(true);
+    setPickerError("");
+    try {
+      const res = await fetch("/api/projects");
+      if (!res.ok) {
+        setPickerError("Failed to load folders");
+        return;
+      }
+
+      const data = await res.json() as {
+        groups?: Array<{
+          name?: string;
+          path?: string;
+          projects?: Array<{ name?: string; path?: string }>;
+        }>;
+      };
+
+      const options: WorkspaceOption[] = [];
+      for (const group of data.groups ?? []) {
+        if (group.path) {
+          options.push({
+            name: group.name || group.path,
+            path: group.path,
+            kind: "group",
+          });
+        }
+        for (const project of group.projects ?? []) {
+          if (!project.path) continue;
+          options.push({
+            name: group.name ? `${group.name}/${project.name || project.path}` : (project.name || project.path),
+            path: project.path,
+            kind: "project",
+          });
+        }
+      }
+
+      if (options.length === 0) {
+        options.push({ name: "workspaces", path: "/opt/workspaces", kind: "group" });
+      }
+
+      const seen = new Set<string>();
+      const unique = options.filter((opt) => {
+        if (seen.has(opt.path)) return false;
+        seen.add(opt.path);
+        return true;
+      });
+
+      unique.sort((a, b) => a.name.localeCompare(b.name));
+      setWorkspaceOptions(unique);
+    } catch {
+      setPickerError("Failed to load folders");
+    } finally {
+      setPickerLoading(false);
+    }
+  }
+
+  async function openPicker() {
+    setPickerOpen(true);
+    if (workspaceOptions.length === 0 && !pickerLoading) {
+      await loadWorkspaceOptions();
+    }
+  }
 
   function nextDailyIso(time: string): string {
     const [hour, minute] = time.split(":").map(Number);
@@ -573,20 +641,36 @@ function NewTaskForm({
       {type === "coding" && (
         <div className="flex gap-3">
           <div className="flex flex-col gap-1 flex-1">
-            <label className="text-xs" htmlFor="workspace" style={{ color: "#4a5568" }}>Workspace</label>
-            <select
-              id="workspace"
-              style={SELECT}
-              value={workspace}
-              onChange={(e) => setWorkspace(e.target.value)}
-            >
-              {workspaces.length === 0 && (
-                <option value="/opt/workspaces">/opt/workspaces</option>
-              )}
-              {workspaces.map((w) => (
-                <option key={w.path} value={w.path}>{w.name} ({w.path})</option>
-              ))}
-            </select>
+            <div className="text-xs" style={{ color: "#4a5568" }}>Workspace</div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={openPicker}
+                className="px-3 py-2 rounded text-xs font-medium"
+                style={{
+                  background: "rgba(0,212,255,0.12)",
+                  color: "#00d4ff",
+                  border: "1px solid rgba(0,212,255,0.3)",
+                  minWidth: "120px",
+                }}
+              >
+                Select Folder
+              </button>
+              <div
+                className="px-3 py-2 rounded text-xs flex-1 font-mono"
+                style={{
+                  background: "rgba(10,14,26,0.8)",
+                  border: "1px solid rgba(30,45,74,0.8)",
+                  color: "#e2e8f0",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+                title={workspace}
+              >
+                {workspace}
+              </div>
+            </div>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs" htmlFor="tool" style={{ color: "#4a5568" }}>Tool</label>
@@ -652,6 +736,87 @@ function NewTaskForm({
           Cancel
         </button>
       </div>
+
+      {pickerOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setPickerOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[75vh] flex flex-col rounded-lg overflow-hidden"
+            style={{ background: "#0f1629", border: "1px solid #1e2d4a" }}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#1e2d4a" }}>
+              <div className="text-sm font-semibold" style={{ color: "#00d4ff" }}>Select Workspace Folder</div>
+              <button
+                type="button"
+                onClick={() => setPickerOpen(false)}
+                className="text-xs px-2 py-1 rounded"
+                style={{ background: "rgba(30,45,74,0.6)", color: "#94a3b8", border: "1px solid #1e2d4a" }}
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            <div className="px-4 py-3 border-b" style={{ borderColor: "#1e2d4a" }}>
+              <input
+                type="text"
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                placeholder="Search folders..."
+                style={INPUT}
+              />
+            </div>
+
+            <div className="p-3 overflow-y-auto space-y-2" style={{ maxHeight: "50vh" }}>
+              {pickerLoading && (
+                <div className="text-xs px-3 py-2 rounded" style={{ color: "#94a3b8", background: "rgba(30,45,74,0.3)" }}>
+                  Loading folders...
+                </div>
+              )}
+              {pickerError && (
+                <div className="text-xs px-3 py-2 rounded" style={{ color: "#ff4444", background: "rgba(255,68,68,0.1)", border: "1px solid rgba(255,68,68,0.2)" }}>
+                  {pickerError}
+                </div>
+              )}
+
+              {!pickerLoading && workspaceOptions
+                .filter((opt) => {
+                  if (!pickerSearch.trim()) return true;
+                  const q = pickerSearch.toLowerCase();
+                  return opt.name.toLowerCase().includes(q) || opt.path.toLowerCase().includes(q);
+                })
+                .map((opt) => (
+                  <button
+                    key={opt.path}
+                    type="button"
+                    onClick={() => {
+                      setWorkspace(opt.path);
+                      setPickerOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded transition-opacity hover:opacity-85"
+                    style={{
+                      background: "rgba(30,45,74,0.35)",
+                      border: "1px solid rgba(30,45,74,0.7)",
+                    }}
+                  >
+                    <div className="text-xs font-semibold" style={{ color: opt.kind === "project" ? "#00d4ff" : "#ffd700" }}>
+                      {opt.name}
+                    </div>
+                    <div className="text-xs font-mono" style={{ color: "#94a3b8" }}>
+                      {opt.path}
+                    </div>
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -664,7 +829,6 @@ export default function SchedulerPage() {
   const [tab, setTab]             = useState<"active" | "completed">("active");
   const [showForm, setShowForm]   = useState(false);
   const [report, setReport]       = useState<Task | null>(null);
-  const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchTasks = useCallback(async () => {
@@ -679,31 +843,11 @@ export default function SchedulerPage() {
     }
   }, []);
 
-  const fetchWorkspaces = useCallback(async () => {
-    try {
-      const res = await fetch("/api/projects");
-      if (!res.ok) return;
-      const data = await res.json();
-      const opts: WorkspaceOption[] = [];
-      for (const group of data.groups ?? []) {
-        for (const proj of group.projects ?? []) {
-          opts.push({ name: `${group.name}/${proj.name}`, path: proj.path });
-        }
-        if (group.projects?.length === 1 && group.projects[0].path === group.path) {
-          // group itself is a single project, already added
-        }
-      }
-      if (opts.length === 0) opts.push({ name: "workspaces", path: "/opt/workspaces" });
-      setWorkspaces(opts);
-    } catch { /* ignore */ }
-  }, []);
-
   useEffect(() => {
     fetchTasks();
-    fetchWorkspaces();
     timerRef.current = setInterval(fetchTasks, 5000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [fetchTasks, fetchWorkspaces]);
+  }, [fetchTasks]);
 
   async function deleteTask(id: string) {
     await fetch(`/api/scheduler/tasks/${id}`, { method: "DELETE" });
@@ -795,7 +939,6 @@ export default function SchedulerPage() {
       {/* New task form */}
       {showForm && (
         <NewTaskForm
-          workspaces={workspaces}
           onCreated={() => { setShowForm(false); fetchTasks(); }}
           onCancel={() => setShowForm(false)}
         />
