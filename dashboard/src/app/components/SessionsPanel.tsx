@@ -388,7 +388,7 @@ function SessionCard({
   );
 }
 
-export default function SessionsPanel({ sessions, ports, loading }: Props) {
+export default function SessionsPanel({ sessions, ports, loading, onExpose }: Props) {
   return (
     <div className="flex flex-col gap-4">
       {/* Panel header */}
