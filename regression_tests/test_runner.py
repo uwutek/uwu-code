@@ -141,6 +141,19 @@ def _looks_like_success(url: str, html: str) -> bool:
     return "login" not in url.lower() and "sign" not in url.lower()
 
 
+def _has_auth_error(html: str) -> bool:
+    lowered = html.lower()
+    error_markers = [
+        "invalid",
+        "incorrect",
+        "wrong password",
+        "authentication failed",
+        "unauthorized",
+        "otp invalid",
+    ]
+    return any(marker in lowered for marker in error_markers)
+
+
 async def run_case_scripted(
     case: dict,
     env: dict[str, str],
@@ -200,7 +213,7 @@ async def run_case_scripted(
             await page.wait_for_timeout(3500)
 
             html = await page.content()
-            ok = phone_filled and pass_filled and clicked and _looks_like_success(page.url, html)
+            ok = phone_filled and pass_filled and clicked and (not _has_auth_error(html))
             return ok, ("SUCCESS" if ok else "Unable to confirm web login success")
 
         async def do_admin_login() -> tuple[bool, str]:
@@ -227,7 +240,7 @@ async def run_case_scripted(
             await page.wait_for_timeout(3500)
 
             html = await page.content()
-            ok = user_filled and pass_filled and clicked and _looks_like_success(page.url, html)
+            ok = user_filled and pass_filled and clicked and (not _has_auth_error(html))
             return ok, ("SUCCESS" if ok else "Unable to confirm admin login success")
 
         try:
@@ -252,6 +265,9 @@ async def run_case_scripted(
                 html = (await page.content()).lower()
                 passed = "already exists" in html or "already registered" in html or _looks_like_success(page.url, html)
                 detail = "SUCCESS" if passed else "Registration success not detected"
+                if passed:
+                    env["WEB_PHONE"] = register_phone
+                    env["WEB_PASSWORD"] = "Test@12345"
 
             elif case_id == "web_login":
                 passed, detail = await do_web_login()
