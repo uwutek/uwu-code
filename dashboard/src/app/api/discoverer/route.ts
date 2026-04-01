@@ -26,6 +26,8 @@ interface DiscovererRequest {
   project?: string;
   persistTests?: boolean;
   persistDocs?: boolean;
+  testSavePath?: string;
+  docsSavePath?: string;
 }
 
 interface DiscovererAiOutput {
@@ -268,6 +270,12 @@ export async function POST(req: NextRequest) {
   if (parsed.persistDocs !== undefined && typeof parsed.persistDocs !== "boolean") {
     return NextResponse.json({ error: "persistDocs must be a boolean" }, { status: 400 });
   }
+  if (parsed.testSavePath !== undefined && typeof parsed.testSavePath !== "string") {
+    return NextResponse.json({ error: "testSavePath must be a string" }, { status: 400 });
+  }
+  if (parsed.docsSavePath !== undefined && typeof parsed.docsSavePath !== "string") {
+    return NextResponse.json({ error: "docsSavePath must be a string" }, { status: 400 });
+  }
 
   const workspacePath = (parsed.workspacePath ?? "").trim();
   if (!workspacePath) {
@@ -291,6 +299,8 @@ export async function POST(req: NextRequest) {
 
   const persistTests = parsed.persistTests !== false;
   const persistDocs = parsed.persistDocs !== false;
+  const testSavePath = (parsed.testSavePath ?? "").trim();
+  const docsSavePath = (parsed.docsSavePath ?? "").trim();
 
   const context = collectWorkspaceContext(normalizedWorkspace);
 
@@ -317,8 +327,11 @@ export async function POST(req: NextRequest) {
   let testsMerge: DiscovererMergeReport | undefined;
 
   if (persistTests) {
-    ensureTestCasesDir();
-    testCasesFile = path.join(TEST_CASES_DIR, `${project}.json`);
+    const resolvedTestDir = testSavePath || TEST_CASES_DIR;
+    if (!fs.existsSync(resolvedTestDir)) {
+      fs.mkdirSync(resolvedTestDir, { recursive: true });
+    }
+    testCasesFile = path.join(resolvedTestDir, `${project}.json`);
 
     if (fs.existsSync(testCasesFile)) {
       let existingRaw: unknown;
@@ -350,7 +363,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (persistDocs) {
-    const knowledge = writeKnowledge(project, agentDocs, normalizedWorkspace);
+    const knowledge = writeKnowledge(project, agentDocs, normalizedWorkspace, docsSavePath || undefined);
     knowledgeFile = knowledge.filePath;
     docsMode = knowledge.mode;
   }

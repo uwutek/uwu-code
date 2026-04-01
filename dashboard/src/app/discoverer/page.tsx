@@ -84,6 +84,8 @@ interface DiscoverRun {
   workspacePath: string;
   persistTests: boolean;
   persistDocs: boolean;
+  testSavePath?: string;
+  docsSavePath?: string;
   status: DiscoverRunStatus;
   started_at: string;
   completed_at?: string;
@@ -158,6 +160,8 @@ export default function DiscovererPage() {
   const [project, setProject] = useState("");
   const [persistTests, setPersistTests] = useState(true);
   const [persistDocs, setPersistDocs] = useState(true);
+  const [testSavePath, setTestSavePath] = useState("");
+  const [docsSavePath, setDocsSavePath] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<DiscovererResponse | null>(null);
@@ -263,6 +267,8 @@ export default function DiscovererPage() {
           project,
           persistTests,
           persistDocs,
+          testSavePath: testSavePath || undefined,
+          docsSavePath: docsSavePath || undefined,
         }),
       });
       const data = (await res.json()) as { error?: string; run_id?: string; target?: DiscoverTarget; project?: string };
@@ -285,6 +291,8 @@ export default function DiscovererPage() {
               workspacePath,
               persistTests,
               persistDocs,
+              testSavePath: testSavePath || undefined,
+              docsSavePath: docsSavePath || undefined,
               status: "running",
               started_at: now,
               pid: 0,
@@ -299,7 +307,7 @@ export default function DiscovererPage() {
     } finally {
       setLoading(false);
     }
-  }, [canRun, workspacePath, project, persistTests, persistDocs, loadDiscoverRuns]);
+  }, [canRun, workspacePath, project, persistTests, persistDocs, testSavePath, docsSavePath, loadDiscoverRuns]);
 
   const loadReview = useCallback(async (files: string[]) => {
     if (files.length === 0) {
@@ -497,15 +505,72 @@ export default function DiscovererPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="text-xs flex items-center gap-2" style={{ color: "#94a3b8" }}>
-            <input type="checkbox" checked={persistTests} onChange={(e) => setPersistTests(e.target.checked)} />
-            Save generated tests to regression_tests/test_cases
-          </label>
-          <label className="text-xs flex items-center gap-2" style={{ color: "#94a3b8" }}>
-            <input type="checkbox" checked={persistDocs} onChange={(e) => setPersistDocs(e.target.checked)} />
-            Save generated docs to openclaw/data/knowledge
-          </label>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="text-xs flex items-center gap-2" style={{ color: "#94a3b8" }}>
+              <input type="checkbox" checked={persistTests} onChange={(e) => setPersistTests(e.target.checked)} />
+              Save generated tests to:
+            </label>
+            {persistTests && (
+              <div className="flex items-center gap-2">
+                <FolderTreePicker
+                  value={testSavePath}
+                  onSelect={setTestSavePath}
+                  compact
+                  placeholder="Default (regression_tests/test_cases)"
+                />
+                {testSavePath && (
+                  <button
+                    type="button"
+                    onClick={() => setTestSavePath("")}
+                    className="text-[10px] px-1.5 py-0.5 rounded"
+                    style={{ color: "#94a3b8", background: "rgba(30,45,74,0.5)", border: "1px solid #1e2d4a" }}
+                    title="Reset to default location"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          {persistTests && testSavePath && (
+            <div className="text-[11px] font-mono ml-6 truncate" style={{ color: "#4a5568" }} title={testSavePath}>
+              {testSavePath}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="text-xs flex items-center gap-2" style={{ color: "#94a3b8" }}>
+              <input type="checkbox" checked={persistDocs} onChange={(e) => setPersistDocs(e.target.checked)} />
+              Save generated docs to:
+            </label>
+            {persistDocs && (
+              <div className="flex items-center gap-2">
+                <FolderTreePicker
+                  value={docsSavePath}
+                  onSelect={setDocsSavePath}
+                  compact
+                  placeholder="Default (openclaw/data/knowledge)"
+                />
+                {docsSavePath && (
+                  <button
+                    type="button"
+                    onClick={() => setDocsSavePath("")}
+                    className="text-[10px] px-1.5 py-0.5 rounded"
+                    style={{ color: "#94a3b8", background: "rgba(30,45,74,0.5)", border: "1px solid #1e2d4a" }}
+                    title="Reset to default location"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          {persistDocs && docsSavePath && (
+            <div className="text-[11px] font-mono ml-6 truncate" style={{ color: "#4a5568" }} title={docsSavePath}>
+              {docsSavePath}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">

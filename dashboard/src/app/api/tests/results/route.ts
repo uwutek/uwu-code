@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { getProjectPaths, getReadableProjectPaths } from "@/app/lib/tests-paths";
+import { getReadableProjectPaths } from "@/app/lib/tests-paths";
 
 interface CaseResult {
   id: string;
@@ -148,7 +148,9 @@ function normalizeRecordingPath(value: string | undefined, resultsDir: string): 
 
 function parseStatus(token: string): { passed: boolean; skipped: boolean } {
   const upper = token.toUpperCase();
-  if (upper === "PASS" || upper === "PASSED") return { passed: true, skipped: false };
+  if (upper === "PASS" || upper === "PASSED" || upper === "SUCCESS" || upper === "OK") {
+    return { passed: true, skipped: false };
+  }
   if (upper === "SKIP" || upper === "SKIPPED") return { passed: false, skipped: true };
   return { passed: false, skipped: false };
 }
@@ -158,13 +160,21 @@ function parseCaseResultsFromAgentText(meta: AgentRunMeta, resultsDir: string): 
   if (chunks.length === 0) return [];
 
   const source = stripAnsi(chunks.join("\n")).slice(-50000);
-  const linePattern = /-\s*`?([a-zA-Z0-9_-]+)`?\s*:\s*(PASS|PASSED|FAIL|FAILED|SKIP|SKIPPED)(?:\.\s*Recording:\s*`?([^`\n]+)`?)?/gi;
   const byCase = new Map<string, CaseResult>();
-  let match = linePattern.exec(source);
-  while (match !== null) {
+
+  for (const rawLine of source.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const match = line.match(
+      /^(?:[-*•]\s*)?`?([a-zA-Z0-9_-]+)`?\s*(?:[:\-–—]\s*)\b(PASS|PASSED|SUCCESS|OK|FAIL|FAILED|ERROR|SKIP|SKIPPED)\b/i
+    );
+    if (!match) continue;
+
     const caseId = match[1];
     const status = parseStatus(match[2]);
-    const recording = normalizeRecordingPath(match[3], resultsDir);
+    const recordingMatch = line.match(/\bRecording\s*[:=]\s*`?([^`\n]+)`?/i);
+    const recording = normalizeRecordingPath(recordingMatch?.[1], resultsDir);
 
     byCase.set(caseId, {
       id: `${meta.run_id}-${caseId}-report`,
@@ -175,8 +185,6 @@ function parseCaseResultsFromAgentText(meta: AgentRunMeta, resultsDir: string): 
       duration_s: 0,
       recording,
     });
-
-    match = linePattern.exec(source);
   }
 
   return Array.from(byCase.values());

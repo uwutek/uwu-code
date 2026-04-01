@@ -610,8 +610,11 @@ export function knowledgeFile(project: string): string {
   return path.join(ensureKnowledgeDir(), `${project}.md`);
 }
 
-export function writeKnowledge(project: string, content: string, workspacePath: string): KnowledgeWriteResult {
-  const dir = ensureKnowledgeDir();
+export function writeKnowledge(project: string, content: string, workspacePath: string, customDir?: string): KnowledgeWriteResult {
+  const dir = customDir && customDir.trim() ? customDir.trim() : ensureKnowledgeDir();
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
   const filePath = path.join(dir, `${project}.md`);
   const incoming = content.trim();
   let mode: KnowledgeWriteResult["mode"] = "created";

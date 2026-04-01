@@ -14,6 +14,8 @@ interface DiscoverRun {
   workspacePath: string;
   persistTests: boolean;
   persistDocs: boolean;
+  testSavePath?: string;
+  docsSavePath?: string;
   status: DiscoverRunStatus;
   started_at: string;
   completed_at?: string;
@@ -33,6 +35,11 @@ const MAX_SUMMARY_BYTES = 8192;
 
 function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
+  try {
+    fs.chmodSync(dir, 0o777);
+  } catch (error) {
+    void error;
+  }
 }
 
 function shellQuote(value: string): string {
@@ -154,13 +161,18 @@ function buildApiPayload(input: {
   project: string;
   persistTests: boolean;
   persistDocs: boolean;
+  testSavePath?: string;
+  docsSavePath?: string;
 }) {
-  return JSON.stringify({
+  const payload: Record<string, unknown> = {
     workspacePath: input.workspacePath,
     project: input.project,
     persistTests: input.persistTests,
     persistDocs: input.persistDocs,
-  });
+  };
+  if (input.testSavePath) payload.testSavePath = input.testSavePath;
+  if (input.docsSavePath) payload.docsSavePath = input.docsSavePath;
+  return JSON.stringify(payload);
 }
 
 function buildCurlCommand(payload: string): string {
@@ -182,6 +194,8 @@ function buildRunnerCommand(target: DiscoverTarget, input: {
   project: string;
   persistTests: boolean;
   persistDocs: boolean;
+  testSavePath?: string;
+  docsSavePath?: string;
 }) {
   const payload = buildApiPayload(input);
   const curlCmd = buildCurlCommand(payload);
@@ -194,7 +208,7 @@ function buildRunnerCommand(target: DiscoverTarget, input: {
   if (target === "claude") {
     return `cd /home/uwu && claude --dangerously-skip-permissions -p ${shellQuote(prompt)}`;
   }
-  return `cd /home/uwu && opencode run --dir /home/uwu ${shellQuote(prompt)}`;
+  return `cd ${shellQuote(REGRESSION_DIR)} && opencode run --dir ${shellQuote(REGRESSION_DIR)} ${shellQuote(prompt)}`;
 }
 
 function spawnBackgroundRun(meta: DiscoverRun) {
@@ -203,19 +217,26 @@ function spawnBackgroundRun(meta: DiscoverRun) {
   const responseAbs = path.join(RESULTS_DIR, meta.response_file);
 
   ensureDir(path.dirname(logAbs));
+  ensureDir(path.dirname(exitAbs));
+  ensureDir(path.dirname(responseAbs));
 
   const runnerCmd = buildRunnerCommand(meta.target, {
     workspacePath: meta.workspacePath,
     project: meta.project,
     persistTests: meta.persistTests,
     persistDocs: meta.persistDocs,
+    testSavePath: meta.testSavePath,
+    docsSavePath: meta.docsSavePath,
   });
 
   const wrapped = `${runnerCmd} > ${shellQuote(responseAbs)} 2> ${shellQuote(logAbs)}; code=$?; cat ${shellQuote(responseAbs)} >> ${shellQuote(logAbs)}; echo $code > ${shellQuote(exitAbs)}`;
 
   const child = spawn("sudo", ["-u", "uwu", "bash", "-lc", wrapped], {
     cwd: REGRESSION_DIR,
-    env: process.env,
+    env: {
+      ...process.env,
+      HOME: "/home/uwu",
+    },
     detached: true,
     stdio: "ignore",
   });
@@ -237,6 +258,8 @@ export async function POST(req: NextRequest) {
   const projectRaw = String(body.project ?? "").trim();
   const persistTests = body.persistTests !== false;
   const persistDocs = body.persistDocs !== false;
+  const testSavePath = typeof body.testSavePath === "string" ? body.testSavePath.trim() : "";
+  const docsSavePath = typeof body.docsSavePath === "string" ? body.docsSavePath.trim() : "";
 
   if (target !== "api" && target !== "claude" && target !== "opencode") {
     return NextResponse.json({ error: "Invalid target" }, { status: 400 });
@@ -265,6 +288,8 @@ export async function POST(req: NextRequest) {
     workspacePath,
     persistTests,
     persistDocs,
+    testSavePath: testSavePath || undefined,
+    docsSavePath: docsSavePath || undefined,
     status: "running",
     started_at: nowIso(),
     pid: 0,

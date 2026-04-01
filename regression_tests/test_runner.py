@@ -41,6 +41,19 @@ TEST_CASES_DIR = Path(os.getenv("UWU_TEST_CASES_DIR") or (BASE_DIR / "test_cases
 RESULTS_DIR = Path(os.getenv("UWU_RESULTS_DIR") or (BASE_DIR / "results"))
 
 
+def _env_non_negative_int(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return default
+
+
+RECORDING_TAIL_MS = _env_non_negative_int("UWU_RECORDING_TAIL_MS", 5000)
+
+
 _JSON_RECOVERY_PATCHED = False
 
 
@@ -711,6 +724,11 @@ async def run_case_scripted(
             detail = str(exc)
             passed = False
         finally:
+            if RECORDING_TAIL_MS > 0:
+                try:
+                    await page.wait_for_timeout(RECORDING_TAIL_MS)
+                except Exception:
+                    pass
             await page.close()
             await context.close()
             await browser.close()
@@ -773,7 +791,11 @@ async def run_case(
         exc_info = str(exc)
         detail = str(exc)
     finally:
-        # Always close the agent so Playwright flushes the video to disk
+        if RECORDING_TAIL_MS > 0:
+            try:
+                await asyncio.sleep(RECORDING_TAIL_MS / 1000)
+            except Exception:
+                pass
         try:
             await agent.close()
         except Exception:
