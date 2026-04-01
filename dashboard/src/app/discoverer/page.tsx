@@ -62,6 +62,15 @@ interface DiscovererResponse {
     docs: boolean;
     testCasesFile?: string;
     knowledgeFile?: string;
+    testsMode?: "created" | "merged" | "unchanged" | "skipped";
+    docsMode?: "created" | "appended" | "unchanged" | "skipped";
+    testsMerge?: {
+      mode: "merged" | "unchanged";
+      addedCaseIds: string[];
+      addedWorkflowIds: string[];
+      reusedCaseIds: string[];
+      reusedWorkflowIds: string[];
+    };
   };
 }
 
@@ -439,8 +448,21 @@ export default function DiscovererPage() {
           </div>
 
           <div className="text-xs" style={{ color: "#94a3b8" }}>
-            {result.persisted.testCasesFile && <div>Saved tests: {result.persisted.testCasesFile}</div>}
-            {result.persisted.knowledgeFile && <div>Saved docs: {result.persisted.knowledgeFile}</div>}
+            {result.persisted.testCasesFile && (
+              <div>
+                Saved tests ({result.persisted.testsMode ?? "created"}): {result.persisted.testCasesFile}
+              </div>
+            )}
+            {result.persisted.testsMerge && (
+              <div>
+                Tests merge: +{result.persisted.testsMerge.addedCaseIds.length} case(s), +{result.persisted.testsMerge.addedWorkflowIds.length} workflow(s), reused {result.persisted.testsMerge.reusedCaseIds.length} case(s) and {result.persisted.testsMerge.reusedWorkflowIds.length} workflow(s)
+              </div>
+            )}
+            {result.persisted.knowledgeFile && (
+              <div>
+                Saved docs ({result.persisted.docsMode ?? "created"}): {result.persisted.knowledgeFile}
+              </div>
+            )}
           </div>
 
           <div className="card p-4 space-y-3" style={{ background: "rgba(30,45,74,0.35)", border: "1px solid #1e2d4a", borderRadius: 12 }}>

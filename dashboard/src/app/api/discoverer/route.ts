@@ -6,7 +6,9 @@ import {
   buildAgentDocs,
   buildTestConfigFromContext,
   collectWorkspaceContext,
+  DiscovererMergeReport,
   inferProjectSlugFromWorkspace,
+  mergeDiscovererTestConfig,
   resolveWorkspacePath,
   safeProjectSlug,
   writeKnowledge,
@@ -81,26 +83,60 @@ export async function POST(req: NextRequest) {
   const persistDocs = parsed.persistDocs !== false;
 
   const context = collectWorkspaceContext(normalizedWorkspace);
-  const testConfig = buildTestConfigFromContext(project, context);
+  const generatedTestConfig = buildTestConfigFromContext(project, context);
   const agentDocs = buildAgentDocs(project, context);
+
+  let effectiveTestConfig = generatedTestConfig;
 
   let testCasesFile = "";
   let knowledgeFile = "";
+  let testsMode: "created" | "merged" | "unchanged" | "skipped" = "skipped";
+  let docsMode: "created" | "appended" | "unchanged" | "skipped" = "skipped";
+  let testsMerge: DiscovererMergeReport | undefined;
 
   if (persistTests) {
     ensureTestCasesDir();
     testCasesFile = path.join(TEST_CASES_DIR, `${project}.json`);
-    fs.writeFileSync(testCasesFile, JSON.stringify(testConfig, null, 2));
+
+    if (fs.existsSync(testCasesFile)) {
+      let existingRaw: unknown;
+      try {
+        existingRaw = JSON.parse(fs.readFileSync(testCasesFile, "utf-8"));
+      } catch {
+        return NextResponse.json(
+          { error: "Existing Discoverer test config is not valid JSON and was not replaced" },
+          { status: 409 }
+        );
+      }
+
+      const merged = mergeDiscovererTestConfig(existingRaw, generatedTestConfig);
+      if (!merged) {
+        return NextResponse.json(
+          { error: "Existing Discoverer test config is incompatible and was not replaced" },
+          { status: 409 }
+        );
+      }
+
+      effectiveTestConfig = merged.config;
+      testsMode = merged.report.mode;
+      testsMerge = merged.report;
+      fs.writeFileSync(testCasesFile, JSON.stringify(effectiveTestConfig, null, 2));
+    } else {
+      fs.writeFileSync(testCasesFile, JSON.stringify(generatedTestConfig, null, 2));
+      testsMode = "created";
+    }
   }
 
   if (persistDocs) {
-    knowledgeFile = writeKnowledge(project, agentDocs, normalizedWorkspace);
+    const knowledge = writeKnowledge(project, agentDocs, normalizedWorkspace);
+    knowledgeFile = knowledge.filePath;
+    docsMode = knowledge.mode;
   }
 
   return NextResponse.json({
     project,
     workspacePath: normalizedWorkspace,
-    testConfig,
+    testConfig: effectiveTestConfig,
     agentDocs,
     context: {
       workspaceName: context.workspaceName,
@@ -114,6 +150,9 @@ export async function POST(req: NextRequest) {
       docs: persistDocs,
       testCasesFile: testCasesFile || undefined,
       knowledgeFile: knowledgeFile || undefined,
+      testsMode,
+      docsMode,
+      testsMerge,
     },
   });
 }

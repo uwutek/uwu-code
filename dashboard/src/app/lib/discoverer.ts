@@ -25,6 +25,24 @@ export interface DiscovererTestConfig {
   workflows: DiscovererWorkflow[];
 }
 
+export interface DiscovererMergeReport {
+  mode: "merged" | "unchanged";
+  addedCaseIds: string[];
+  addedWorkflowIds: string[];
+  reusedCaseIds: string[];
+  reusedWorkflowIds: string[];
+}
+
+export interface DiscovererMergeResult {
+  config: DiscovererTestConfig & Record<string, unknown>;
+  report: DiscovererMergeReport;
+}
+
+export interface KnowledgeWriteResult {
+  filePath: string;
+  mode: "created" | "appended" | "unchanged";
+}
+
 export interface WorkspaceContext {
   workspacePath: string;
   workspaceName: string;
@@ -84,6 +102,83 @@ interface KnowledgeIndexEntry {
 
 function normalizedPathForCompare(input: string): string {
   return path.resolve(input).replace(/\\/g, "/").replace(/\/$/, "");
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function normalizeCase(value: unknown): DiscovererCase | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = typeof record.id === "string" ? record.id.trim() : "";
+  const label = typeof record.label === "string" ? record.label.trim() : "";
+  const task = typeof record.task === "string" ? record.task : "";
+  if (!id || !label || !task) return null;
+
+  const dependsOn = typeof record.depends_on === "string" && record.depends_on.trim()
+    ? record.depends_on.trim()
+    : null;
+
+  return {
+    id,
+    label,
+    task,
+    enabled: record.enabled !== false,
+    depends_on: dependsOn,
+    skip_dependents_on_fail: record.skip_dependents_on_fail === true,
+  };
+}
+
+function normalizeWorkflow(value: unknown): DiscovererWorkflow | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = typeof record.id === "string" ? record.id.trim() : "";
+  const label = typeof record.label === "string" ? record.label.trim() : "";
+  if (!id || !label) return null;
+
+  const caseIds = Array.isArray(record.case_ids)
+    ? record.case_ids.filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+    : [];
+
+  return {
+    id,
+    label,
+    description: typeof record.description === "string" ? record.description : undefined,
+    enabled: record.enabled !== false,
+    case_ids: caseIds,
+  };
+}
+
+function casesEqual(a: DiscovererCase, b: DiscovererCase): boolean {
+  return (
+    a.label === b.label
+    && a.task === b.task
+    && a.enabled === b.enabled
+    && (a.depends_on ?? null) === (b.depends_on ?? null)
+    && (a.skip_dependents_on_fail ?? false) === (b.skip_dependents_on_fail ?? false)
+  );
+}
+
+function workflowsEqual(a: DiscovererWorkflow, b: DiscovererWorkflow): boolean {
+  return (
+    a.label === b.label
+    && (a.description ?? "") === (b.description ?? "")
+    && a.enabled === b.enabled
+    && a.case_ids.length === b.case_ids.length
+    && a.case_ids.every((id, idx) => b.case_ids[idx] === id)
+  );
+}
+
+function nextAvailableId(base: string, used: Set<string>): string {
+  let candidate = base;
+  let idx = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}_${idx}`;
+    idx += 1;
+  }
+  used.add(candidate);
+  return candidate;
 }
 
 function isWithinRoot(candidate: string, root: string): boolean {
@@ -340,6 +435,133 @@ export function buildTestConfigFromContext(project: string, ctx: WorkspaceContex
   };
 }
 
+export function mergeDiscovererTestConfig(existingRaw: unknown, generated: DiscovererTestConfig): DiscovererMergeResult | null {
+  const existingRecord = asRecord(existingRaw);
+  if (!existingRecord) return null;
+
+  const existingCasesRaw = existingRecord.test_cases;
+  const existingWorkflowsRaw = existingRecord.workflows;
+  if (!Array.isArray(existingCasesRaw) || !Array.isArray(existingWorkflowsRaw)) {
+    return null;
+  }
+
+  const existingCases = existingCasesRaw.map(normalizeCase).filter((v): v is DiscovererCase => v !== null);
+  const existingWorkflows = existingWorkflowsRaw.map(normalizeWorkflow).filter((v): v is DiscovererWorkflow => v !== null);
+
+  const mergedCases = [...existingCases];
+  const mergedWorkflows = [...existingWorkflows];
+
+  const usedCaseIds = new Set(existingCases.map((c) => c.id));
+  const usedWorkflowIds = new Set(existingWorkflows.map((w) => w.id));
+
+  const mappedCaseIds = new Map<string, string>();
+  const addedCaseIds: string[] = [];
+  const reusedCaseIds: string[] = [];
+
+  for (const generatedCase of generated.test_cases) {
+    if (!usedCaseIds.has(generatedCase.id)) {
+      usedCaseIds.add(generatedCase.id);
+      mergedCases.push(generatedCase);
+      mappedCaseIds.set(generatedCase.id, generatedCase.id);
+      addedCaseIds.push(generatedCase.id);
+      continue;
+    }
+
+    const existingCase = mergedCases.find((c) => c.id === generatedCase.id);
+    if (existingCase && casesEqual(existingCase, generatedCase)) {
+      mappedCaseIds.set(generatedCase.id, generatedCase.id);
+      reusedCaseIds.push(generatedCase.id);
+      continue;
+    }
+
+    const newId = nextAvailableId(`${generatedCase.id}_discoverer`, usedCaseIds);
+    mappedCaseIds.set(generatedCase.id, newId);
+    mergedCases.push({
+      ...generatedCase,
+      id: newId,
+      label: generatedCase.label.includes("(Discoverer)")
+        ? generatedCase.label
+        : `${generatedCase.label} (Discoverer)`,
+    });
+    addedCaseIds.push(newId);
+  }
+
+  const addedWorkflowIds: string[] = [];
+  const reusedWorkflowIds: string[] = [];
+
+  for (const generatedWorkflow of generated.workflows) {
+    const remapped: DiscovererWorkflow = {
+      ...generatedWorkflow,
+      case_ids: generatedWorkflow.case_ids.map((caseId) => mappedCaseIds.get(caseId) ?? caseId),
+    };
+
+    if (!usedWorkflowIds.has(remapped.id)) {
+      usedWorkflowIds.add(remapped.id);
+      mergedWorkflows.push(remapped);
+      addedWorkflowIds.push(remapped.id);
+      continue;
+    }
+
+    const existingWorkflow = mergedWorkflows.find((w) => w.id === remapped.id);
+    if (existingWorkflow && workflowsEqual(existingWorkflow, remapped)) {
+      reusedWorkflowIds.push(remapped.id);
+      continue;
+    }
+
+    const newId = nextAvailableId(`${remapped.id}_discoverer`, usedWorkflowIds);
+    mergedWorkflows.push({
+      ...remapped,
+      id: newId,
+      label: remapped.label.includes("(Discoverer)")
+        ? remapped.label
+        : `${remapped.label} (Discoverer)`,
+    });
+    addedWorkflowIds.push(newId);
+  }
+
+  const existingDescription = typeof existingRecord.description === "string"
+    ? existingRecord.description.trim()
+    : "";
+  const generatedDescription = generated.description.trim();
+
+  let description = existingDescription || generatedDescription;
+  if (existingDescription && generatedDescription && !existingDescription.includes(generatedDescription)) {
+    description = `${existingDescription}\n\n${generatedDescription}`;
+  }
+
+  const project = typeof existingRecord.project === "string" && existingRecord.project.trim().length > 0
+    ? existingRecord.project
+    : generated.project;
+
+  const extras: Record<string, unknown> = { ...existingRecord };
+  delete extras.project;
+  delete extras.description;
+  delete extras.test_cases;
+  delete extras.workflows;
+
+  const mode: DiscovererMergeReport["mode"] =
+    addedCaseIds.length === 0 && addedWorkflowIds.length === 0
+      ? "unchanged"
+      : "merged";
+
+  return {
+    config: {
+      ...extras,
+      project,
+      description,
+      test_cases: mergedCases,
+      workflows: mergedWorkflows,
+    },
+    report: {
+      mode,
+      addedCaseIds,
+      addedWorkflowIds,
+      reusedCaseIds,
+      reusedWorkflowIds,
+    },
+  };
+}
+
 export function buildAgentDocs(project: string, ctx: WorkspaceContext): string {
   const stack = ctx.stackHints.length > 0 ? ctx.stackHints.map((s) => `- ${s}`).join("\n") : "- No clear stack hints found";
   const scripts = ctx.runScripts.length > 0 ? ctx.runScripts.map((s) => `- ${s}`).join("\n") : "- No package scripts discovered";
@@ -388,10 +610,29 @@ export function knowledgeFile(project: string): string {
   return path.join(ensureKnowledgeDir(), `${project}.md`);
 }
 
-export function writeKnowledge(project: string, content: string, workspacePath: string): string {
+export function writeKnowledge(project: string, content: string, workspacePath: string): KnowledgeWriteResult {
   const dir = ensureKnowledgeDir();
   const filePath = path.join(dir, `${project}.md`);
-  fs.writeFileSync(filePath, content);
+  const incoming = content.trim();
+  let mode: KnowledgeWriteResult["mode"] = "created";
+
+  if (fs.existsSync(filePath)) {
+    const existing = fs.readFileSync(filePath, "utf-8");
+    const existingTrimmed = existing.trim();
+    if (existingTrimmed && existingTrimmed.includes(incoming)) {
+      mode = "unchanged";
+    } else if (existingTrimmed) {
+      const combined = `${existingTrimmed}\n\n---\n\n## Discoverer Update ${new Date().toISOString()}\n\n${incoming}\n`;
+      fs.writeFileSync(filePath, combined);
+      mode = "appended";
+    } else {
+      fs.writeFileSync(filePath, `${incoming}\n`);
+      mode = "created";
+    }
+  } else {
+    fs.writeFileSync(filePath, `${incoming}\n`);
+    mode = "created";
+  }
 
   const indexPath = path.join(dir, "index.json");
   const prev: KnowledgeIndexEntry[] =
@@ -411,7 +652,7 @@ export function writeKnowledge(project: string, content: string, workspacePath: 
   next.push({ project, workspacePath: canonicalWorkspace, file: filePath, updatedAt: new Date().toISOString() });
   fs.writeFileSync(indexPath, JSON.stringify(next, null, 2));
 
-  return filePath;
+  return { filePath, mode };
 }
 
 export function readKnowledgeByWorkspace(workspacePath?: string): string {
@@ -452,7 +693,8 @@ export function readKnowledgeByWorkspace(workspacePath?: string): string {
 
   if (!fs.existsSync(filePath)) return "";
   try {
-    return fs.readFileSync(filePath, "utf-8").slice(0, 9000);
+    const content = fs.readFileSync(filePath, "utf-8");
+    return content.length > 9000 ? content.slice(-9000) : content;
   } catch {
     return "";
   }

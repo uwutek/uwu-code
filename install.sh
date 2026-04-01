@@ -140,15 +140,38 @@ install_nvim() {
   ln -sf /opt/nvim/bin/nvim /usr/local/bin/nvim
 }
 
-if ! nvim --version 2>/dev/null | head -1 | grep -qE 'v0\.(9|1[0-9])'; then
+NVIM_MIN_MAJOR=0
+NVIM_MIN_MINOR=11
+NVIM_MIN_PATCH=2
+
+nvim_version_ok() {
+  command -v nvim &>/dev/null || return 1
+  local ver
+  ver=$(nvim --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)
+  [ -z "$ver" ] && return 1
+  local maj min pat
+  maj=$(echo "$ver" | cut -d. -f1)
+  min=$(echo "$ver" | cut -d. -f2)
+  pat=$(echo "$ver" | cut -d. -f3)
+  [ "$maj" -gt "$NVIM_MIN_MAJOR" ] && return 0
+  [ "$maj" -lt "$NVIM_MIN_MAJOR" ] && return 1
+  [ "$min" -gt "$NVIM_MIN_MINOR" ] && return 0
+  [ "$min" -lt "$NVIM_MIN_MINOR" ] && return 1
+  [ "$pat" -ge "$NVIM_MIN_PATCH" ] && return 0
+  return 1
+}
+
+if ! nvim_version_ok; then
   install_nvim
-  if command -v nvim &>/dev/null; then
+  if nvim_version_ok; then
     success "Neovim $(nvim --version | head -1) installed."
+  elif command -v nvim &>/dev/null; then
+    warn "Neovim installed but version $(nvim --version | head -1) is below required ${NVIM_MIN_MAJOR}.${NVIM_MIN_MINOR}.${NVIM_MIN_PATCH}."
   else
-    warn "Neovim installation skipped (command unavailable)."
+    warn "Neovim installation failed (command unavailable)."
   fi
 else
-  success "Neovim $(nvim --version | head -1) already up to date."
+  success "Neovim $(nvim --version | head -1) already meets minimum ${NVIM_MIN_MAJOR}.${NVIM_MIN_MINOR}.${NVIM_MIN_PATCH}."
 fi
 
 ###############################################################################
