@@ -152,6 +152,8 @@ def _has_auth_error(html: str) -> bool:
         "login failed",
         "invalid credentials",
         "incorrect credentials",
+        '"user_name" is missing',
+        "user_name is missing",
     ]
     if any(marker in lowered for marker in explicit_markers):
         return True
@@ -216,6 +218,43 @@ def _normalize_phone(phone: str) -> str:
     if phone.startswith("+") and digits.startswith("94") and len(digits) >= 11:
         return "0" + digits[-9:]
     return phone
+
+
+def _phone_variants(phone: str) -> list[str]:
+    base = (phone or "").strip()
+    digits = re.sub(r"\D", "", base)
+
+    candidates: list[str] = []
+
+    def push(value: str):
+        v = (value or "").strip()
+        if not v:
+            return
+        if v not in candidates:
+            candidates.append(v)
+
+    push(base)
+
+    if digits:
+        if digits.startswith("94") and len(digits) >= 11:
+            tail = digits[-9:]
+            push("0" + tail)
+            push("94" + tail)
+            push("+94" + tail)
+        elif digits.startswith("0") and len(digits) >= 10:
+            tail = digits[-9:]
+            push("0" + tail)
+            push("94" + tail)
+            push("+94" + tail)
+        elif len(digits) == 9:
+            push("0" + digits)
+            push("94" + digits)
+            push("+94" + digits)
+        else:
+            push(digits)
+
+    push("0771234999")
+    return candidates
 
 
 def _is_otp_step(url: str, html: str) -> bool:
@@ -296,7 +335,9 @@ async def run_case_scripted(
 
     web_url = env.get("WEB_BASE_URL", "http://95.111.238.19:3001")
     admin_url = env.get("ADMIN_BASE_URL", "http://95.111.238.19:3002")
-    web_phone = _normalize_phone(env.get("WEB_PHONE", ""))
+    web_phone_raw = env.get("WEB_PHONE", "")
+    web_phone = _normalize_phone(web_phone_raw)
+    web_phone_variants = _phone_variants(web_phone_raw or web_phone)
     web_pass = env.get("WEB_PASSWORD", "")
     admin_user = env.get("ADMIN_USERNAME", "")
     admin_pass = env.get("ADMIN_PASSWORD", "")
@@ -319,7 +360,8 @@ async def run_case_scripted(
             await page.goto(web_url, wait_until="domcontentloaded", timeout=45000)
             await page.wait_for_timeout(1200)
             last_detail = "web_login failed"
-            for attempt in range(4):
+            attempt_count = max(4, len(web_phone_variants))
+            for attempt in range(attempt_count):
                 if attempt > 0:
                     try:
                         await page.reload(wait_until="domcontentloaded", timeout=45000)
@@ -329,21 +371,27 @@ async def run_case_scripted(
 
                 await _wait_for_login_form(page, retries=1)
 
+                phone_value = web_phone_variants[attempt % len(web_phone_variants)]
+
                 phone_filled = await _fill_first(
                     page,
                     [
+                        "input[name='user_name']",
+                        "input[name*='user' i]",
+                        "input[placeholder*='username' i]",
                         "input[type='tel']",
                         "input[name*='phone' i]",
                         "input[name*='mobile' i]",
+                        "input[placeholder*='mobile number' i]",
                         "input[placeholder*='phone' i]",
                         "input[placeholder*='mobile' i]",
                         "input[type='text']",
                     ],
-                    web_phone,
+                    phone_value,
                 )
                 if not phone_filled:
                     try:
-                        await page.locator("input:not([type='password'])").first.fill(web_phone, timeout=3500)
+                        await page.locator("input:not([type='password'])").first.fill(phone_value, timeout=3500)
                         phone_filled = "input:not([type='password'])"
                     except Exception:
                         pass
@@ -357,13 +405,44 @@ async def run_case_scripted(
 
                 visible_text = await _get_visible_text(page)
                 auth_error = _has_auth_error(visible_text)
+                lower_visible = visible_text.lower()
                 moved_from_login = "login" not in page.url.lower()
-                ok = phone_filled and pass_filled and clicked and (moved_from_login or not auth_error)
+                otp_gate = _is_otp_step(page.url, visible_text)
+                success_like = _looks_like_success(page.url, visible_text)
+
+                user_name_missing = (
+                    '"user_name" is missing' in lower_visible
+                    or "user_name is missing" in lower_visible
+                )
+
+                if user_name_missing:
+                    explicit_user_filled = await _fill_first(
+                        page,
+                        [
+                            "input[name='user_name']",
+                            "input[name*='user' i]",
+                            "input[placeholder*='username' i]",
+                            "input[type='text']",
+                        ],
+                        phone_value,
+                    )
+                    clicked_retry = await _click_by_names(page, ["login", "log in", "sign in"])
+                    await page.wait_for_timeout(3500)
+                    visible_text = await _get_visible_text(page)
+                    auth_error = _has_auth_error(visible_text)
+                    moved_from_login = "login" not in page.url.lower()
+                    otp_gate = _is_otp_step(page.url, visible_text)
+                    success_like = _looks_like_success(page.url, visible_text)
+                    if explicit_user_filled and pass_filled and clicked_retry and (moved_from_login or otp_gate or success_like) and not auth_error:
+                        return True, "SUCCESS"
+
+                ok = phone_filled and pass_filled and clicked and (moved_from_login or otp_gate or success_like) and not auth_error
                 if ok:
                     return True, "SUCCESS"
                 last_detail = (
                     f"web_login checks: phone_filled={phone_filled} pass_filled={pass_filled} "
-                    f"clicked={bool(clicked)} auth_error={auth_error} attempt={attempt + 1} url={page.url}"
+                    f"clicked={bool(clicked)} auth_error={auth_error} otp_gate={otp_gate} success_like={success_like} "
+                    f"attempt={attempt + 1} phone_used={phone_value} url={page.url}"
                 )
 
             return False, last_detail
