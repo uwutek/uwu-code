@@ -335,6 +335,11 @@ def _read_otp_from_tmux(env: dict[str, str]) -> tuple[str, str]:
     return "", session if not window else f"{session}:{window}"
 
 
+def _extract_first_url(text: str) -> str:
+    match = re.search(r"https?://[^\s,)\"'>]+", text)
+    return match.group(0).rstrip("/.") if match else ""
+
+
 async def run_case_scripted(
     case: dict,
     env: dict[str, str],
@@ -348,14 +353,41 @@ async def run_case_scripted(
         case_rec_dir = recording_dir / case["id"]
         case_rec_dir.mkdir(parents=True, exist_ok=True)
 
-    web_url = env.get("WEB_BASE_URL", "http://95.111.238.19:3100")
-    admin_url = env.get("ADMIN_BASE_URL", "http://95.111.238.19:3101")
+    task_text = substitute_vars(case.get("task", ""), env)
+
+    case_id = case.get("id", "")
+    is_web_case = case_id in {"web_register", "web_login", "web_smoke"}
+    is_admin_case = case_id in {"admin_login", "admin_smoke"}
+
+    base_url = _extract_first_url(task_text)
+    if not base_url:
+        if is_web_case:
+            base_url = env.get("WEB_BASE_URL", "")
+        elif is_admin_case:
+            base_url = env.get("ADMIN_BASE_URL", "")
+
+    if not base_url:
+        return CaseResult(
+            id=case_id,
+            label=label,
+            passed=False,
+            detail=(
+                "No base URL found. Add a URL in the test case task text "
+                "(e.g. 'Go to http://host:port') or set WEB_BASE_URL / ADMIN_BASE_URL "
+                "in Test Variables."
+            ),
+            duration_s=round(time.time() - t0, 1),
+        )
+
+    web_url = base_url if is_web_case else env.get("WEB_BASE_URL", base_url)
+    admin_url = base_url if is_admin_case else env.get("ADMIN_BASE_URL", base_url)
+
     web_phone_raw = env.get("WEB_PHONE", "0771234999")
     web_phone = _normalize_phone(web_phone_raw)
     web_phone_variants = _phone_variants(web_phone_raw or web_phone)
     web_pass = env.get("WEB_PASSWORD", "Test@12345")
-    admin_user = env.get("ADMIN_USERNAME", "SuperAdmin")
-    admin_pass = env.get("ADMIN_PASSWORD", "mk9v4@DIbcR15R91")
+    admin_user = env.get("ADMIN_USERNAME", "")
+    admin_pass = env.get("ADMIN_PASSWORD", "")
     random_digits = env.get("RANDOM_6_DIGITS", "")
     register_phone = f"07{random_digits}" if random_digits else (web_phone or "0771234999")
 
@@ -578,7 +610,6 @@ async def run_case_scripted(
             return False, last_detail
 
         try:
-            case_id = case["id"]
             if case_id == "web_register":
                 await page.goto(web_url, wait_until="domcontentloaded", timeout=45000)
                 await page.wait_for_timeout(1200)
