@@ -175,6 +175,19 @@ else
 fi
 
 ###############################################################################
+# Luarocks (needed by image.nvim for the magick rock)
+###############################################################################
+if ! command -v luarocks &>/dev/null; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq luarocks >/dev/null 2>&1 || true
+fi
+if command -v luarocks &>/dev/null; then
+  luarocks install magick >/dev/null 2>&1 || true
+  success "Luarocks $(luarocks --version | head -1) + magick rock installed."
+else
+  warn "Luarocks installation failed."
+fi
+
+###############################################################################
 # Node.js
 ###############################################################################
 if ! command -v node &>/dev/null || [[ "$(node -v | cut -d. -f1 | tr -d 'v')" -lt "$NODE_VERSION" ]]; then
