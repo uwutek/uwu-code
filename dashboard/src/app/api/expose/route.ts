@@ -38,10 +38,10 @@ async function getPublicIp(): Promise<string> {
 }
 
 async function getUfwStatus(): Promise<string[]> {
-  const { stdout } = await runCommand("sudo ufw status | grep '^Anywhere' | awk '{print $2}' | sort -u");
+  const { stdout } = await runCommand("sudo ufw status | grep '^Anywhere' | awk '{print $3}' | sort -u");
   return stdout
     .split("\n")
-    .map((l) => l.trim())
+    .map((l) => l.trim().split("/")[0])
     .filter((l) => /^\d+$/.test(l));
 }
 

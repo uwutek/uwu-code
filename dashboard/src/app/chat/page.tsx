@@ -1,28 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import FolderTreePicker from "../components/FolderTreePicker";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
-}
-
-interface ProjectInfo {
-  name: string;
-  path: string;
-  lastModified: string;
-  branch: string;
-  remoteUrl: string;
-}
-
-interface ProjectGroup {
-  name: string;
-  path: string;
-  projects: ProjectInfo[];
-}
-
-interface ProjectsData {
-  groups: ProjectGroup[];
 }
 
 function MarkdownText({ text }: { text: string }) {
@@ -160,34 +143,9 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [workspaces, setWorkspaces] = useState<string[]>([]);
   const [workspacePath, setWorkspacePath] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    let mounted = true;
-    const loadWorkspaces = async () => {
-      try {
-        const res = await fetch("/api/projects");
-        if (!res.ok) return;
-        const data = (await res.json()) as ProjectsData;
-        const next = Array.from(
-          new Set((data.groups ?? []).flatMap((group) => (group.projects ?? []).map((project) => project.path)).filter(Boolean))
-        ).sort((a, b) => a.localeCompare(b));
-        if (!mounted) return;
-        setWorkspaces(next);
-        if (!workspacePath && next.length > 0) {
-          setWorkspacePath(next[0]);
-        }
-      } catch {
-      }
-    };
-    loadWorkspaces();
-    return () => {
-      mounted = false;
-    };
-  }, [workspacePath]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -264,21 +222,12 @@ export default function ChatPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {workspaces.length > 0 && (
-            <select
-              value={workspacePath}
-              onChange={(e) => setWorkspacePath(e.target.value)}
-              className="px-2 py-1.5 rounded-lg text-xs max-w-[360px]"
-              style={{ background: "rgba(30,45,74,0.5)", color: "#94a3b8", border: "1px solid #1e2d4a" }}
-              title="Workspace knowledge context"
-            >
-              {workspaces.map((ws) => (
-                <option key={ws} value={ws}>
-                  {ws}
-                </option>
-              ))}
-            </select>
-          )}
+          <FolderTreePicker
+            value={workspacePath}
+            onSelect={setWorkspacePath}
+            compact
+            placeholder="Workspace context"
+          />
 
           {!isEmpty && (
             <button

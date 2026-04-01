@@ -1,27 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-interface ProjectInfo {
-  name: string;
-  path: string;
-}
-
-interface ProjectGroup {
-  name: string;
-  path: string;
-  projects: ProjectInfo[];
-}
-
-interface ProjectsData {
-  groups: ProjectGroup[];
-}
-
-interface WorkspaceOption {
-  name: string;
-  path: string;
-  kind: "group" | "project";
-}
+import FolderTreePicker from "../components/FolderTreePicker";
 
 interface DiscovererCase {
   id: string;
@@ -102,41 +82,6 @@ function toSlug(value: string): string {
     .replace(/^-|-$/g, "");
 }
 
-function toWorkspaceOptions(data: ProjectsData): WorkspaceOption[] {
-  const options: WorkspaceOption[] = [];
-  for (const group of data.groups ?? []) {
-    if (group.path) {
-      options.push({
-        name: group.name || group.path,
-        path: group.path,
-        kind: "group",
-      });
-    }
-    for (const project of group.projects ?? []) {
-      if (!project.path) continue;
-      options.push({
-        name: group.name ? `${group.name}/${project.name || project.path}` : (project.name || project.path),
-        path: project.path,
-        kind: "project",
-      });
-    }
-  }
-
-  if (options.length === 0) {
-    options.push({ name: "workspaces", path: "/opt/workspaces", kind: "group" });
-  }
-
-  const seen = new Set<string>();
-  const unique = options.filter((opt) => {
-    if (seen.has(opt.path)) return false;
-    seen.add(opt.path);
-    return true;
-  });
-
-  unique.sort((a, b) => a.name.localeCompare(b.name));
-  return unique;
-}
-
 function statusColor(status: string): string {
   switch (status) {
     case "added":
@@ -159,7 +104,6 @@ function statusColor(status: string): string {
 }
 
 export default function DiscovererPage() {
-  const [workspaceOptions, setWorkspaceOptions] = useState<WorkspaceOption[]>([]);
   const [workspacePath, setWorkspacePath] = useState("");
   const [project, setProject] = useState("");
   const [persistTests, setPersistTests] = useState(true);
@@ -167,11 +111,6 @@ export default function DiscovererPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<DiscovererResponse | null>(null);
-
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerLoading, setPickerLoading] = useState(false);
-  const [pickerError, setPickerError] = useState("");
-  const [pickerSearch, setPickerSearch] = useState("");
 
   const [review, setReview] = useState<ReviewResponse | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -181,33 +120,6 @@ export default function DiscovererPage() {
   const [commitLoading, setCommitLoading] = useState(false);
   const [commitError, setCommitError] = useState("");
   const [commitSuccess, setCommitSuccess] = useState("");
-
-  const loadWorkspaceOptions = useCallback(async () => {
-    setPickerLoading(true);
-    setPickerError("");
-    try {
-      const res = await fetch("/api/projects");
-      if (!res.ok) {
-        setPickerError("Failed to load folders");
-        return;
-      }
-      const data = (await res.json()) as ProjectsData;
-      const next = toWorkspaceOptions(data);
-      setWorkspaceOptions(next);
-      if (!workspacePath && next.length > 0) {
-        setWorkspacePath(next[0].path);
-        setProject((prev) => prev || toSlug(next[0].path.split("/").filter(Boolean).at(-1) ?? ""));
-      }
-    } catch {
-      setPickerError("Failed to load folders");
-    } finally {
-      setPickerLoading(false);
-    }
-  }, [workspacePath]);
-
-  useEffect(() => {
-    void loadWorkspaceOptions();
-  }, [loadWorkspaceOptions]);
 
   useEffect(() => {
     if (!workspacePath) return;
@@ -224,12 +136,11 @@ export default function DiscovererPage() {
   const canRun = workspacePath.trim().length > 0 && project.trim().length > 0 && !loading;
   const testCaseCount = useMemo(() => result?.testConfig.test_cases.length ?? 0, [result]);
 
-  async function openPicker() {
-    setPickerOpen(true);
-    if (workspaceOptions.length === 0 && !pickerLoading) {
-      await loadWorkspaceOptions();
-    }
-  }
+  const handleWorkspaceSelect = useCallback((path: string) => {
+    setWorkspacePath(path);
+    const inferred = toSlug(path.split("/").filter(Boolean).at(-1) ?? "");
+    if (inferred) setProject((prev) => prev || inferred);
+  }, []);
 
   const runDiscoverer = useCallback(async () => {
     if (!canRun) return;
@@ -345,24 +256,15 @@ export default function DiscovererPage() {
       <div className="card p-4 space-y-4" style={{ background: "rgba(30,45,74,0.35)", border: "1px solid #1e2d4a", borderRadius: 12 }}>
         <div className="grid md:grid-cols-2 gap-4">
           <div className="space-y-1">
-            <label htmlFor="discoverer-workspace-display" className="text-xs" style={{ color: "#94a3b8" }}>Workspace path</label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={openPicker}
-                className="px-3 py-2 rounded text-xs font-medium"
-                style={{
-                  background: "rgba(0,212,255,0.12)",
-                  color: "#00d4ff",
-                  border: "1px solid rgba(0,212,255,0.3)",
-                  minWidth: "120px",
-                }}
-              >
-                Select Folder
-              </button>
+            <span className="text-xs" style={{ color: "#94a3b8" }}>Workspace path</span>
+            <div className="flex gap-2 items-center">
+              <FolderTreePicker
+                value={workspacePath}
+                onSelect={handleWorkspaceSelect}
+                placeholder="Select workspace folder"
+              />
               <div
-                id="discoverer-workspace-display"
-                className="w-full px-3 py-2 rounded text-sm font-mono"
+                className="flex-1 px-3 py-2 rounded text-sm font-mono min-w-0"
                 style={{ background: "#0f172a", color: "#e2e8f0", border: "1px solid #1e2d4a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                 title={workspacePath || "No folder selected"}
               >
@@ -563,88 +465,6 @@ export default function DiscovererPage() {
                 )}
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {pickerOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setPickerOpen(false);
-          }}
-        >
-          <div
-            className="w-full max-w-2xl max-h-[75vh] flex flex-col rounded-lg overflow-hidden"
-            style={{ background: "#0f1629", border: "1px solid #1e2d4a" }}
-          >
-            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#1e2d4a" }}>
-              <div className="text-sm font-semibold" style={{ color: "#00d4ff" }}>Select Workspace Folder</div>
-              <button
-                type="button"
-                onClick={() => setPickerOpen(false)}
-                className="text-xs px-2 py-1 rounded"
-                style={{ background: "rgba(30,45,74,0.6)", color: "#94a3b8", border: "1px solid #1e2d4a" }}
-              >
-                ✕ Close
-              </button>
-            </div>
-
-            <div className="px-4 py-3 border-b" style={{ borderColor: "#1e2d4a" }}>
-              <input
-                type="text"
-                value={pickerSearch}
-                onChange={(e) => setPickerSearch(e.target.value)}
-                placeholder="Search folders..."
-                className="w-full px-3 py-2 rounded text-sm"
-                style={{ background: "#0f172a", color: "#e2e8f0", border: "1px solid #1e2d4a" }}
-              />
-            </div>
-
-            <div className="p-3 overflow-y-auto space-y-2" style={{ maxHeight: "50vh" }}>
-              {pickerLoading && (
-                <div className="text-xs px-3 py-2 rounded" style={{ color: "#94a3b8", background: "rgba(30,45,74,0.3)" }}>
-                  Loading folders...
-                </div>
-              )}
-              {pickerError && (
-                <div className="text-xs px-3 py-2 rounded" style={{ color: "#ff4444", background: "rgba(255,68,68,0.1)", border: "1px solid rgba(255,68,68,0.2)" }}>
-                  {pickerError}
-                </div>
-              )}
-
-              {!pickerLoading && workspaceOptions
-                .filter((opt) => {
-                  if (!pickerSearch.trim()) return true;
-                  const q = pickerSearch.toLowerCase();
-                  return opt.name.toLowerCase().includes(q) || opt.path.toLowerCase().includes(q);
-                })
-                .map((opt) => (
-                  <button
-                    key={opt.path}
-                    type="button"
-                    onClick={() => {
-                      setWorkspacePath(opt.path);
-                      setPickerOpen(false);
-                    }}
-                    className="w-full text-left px-3 py-2 rounded transition-opacity hover:opacity-85"
-                    style={{
-                      background: "rgba(30,45,74,0.35)",
-                      border: workspacePath === opt.path ? "1px solid rgba(0,212,255,0.55)" : "1px solid rgba(30,45,74,0.7)",
-                    }}
-                  >
-                    <div className="text-xs font-semibold" style={{ color: opt.kind === "project" ? "#00d4ff" : "#ffd700" }}>
-                      {opt.name}
-                    </div>
-                    <div className="text-xs font-mono" style={{ color: "#94a3b8" }}>
-                      {opt.path}
-                    </div>
-                  </button>
-                ))}
-            </div>
           </div>
         </div>
       )}

@@ -1,13 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PortInfo, TmuxSession, TmuxWindow } from "../page";
+
+interface ExposedPort {
+  port: number;
+  url: string;
+}
 
 interface Props {
   sessions: TmuxSession[];
   ports: PortInfo[];
   loading: boolean;
   onRefresh: () => void;
+  onExpose: (port: PortInfo) => void;
+  onPortsChanged: () => void;
+  refreshToken?: number;
 }
 
 function formatAge(created: number): string {
@@ -58,10 +66,18 @@ function WindowRow({
   window,
   sessionName,
   ports,
+  exposedPorts,
+  onExpose,
+  onUnexpose,
+  unexposingPort,
 }: {
   window: TmuxWindow;
   sessionName: string;
   ports: PortInfo[];
+  exposedPorts: Set<number>;
+  onExpose: (port: PortInfo) => void;
+  onUnexpose: (port: number) => void;
+  unexposingPort: number | null;
 }) {
   const matchedPorts = getPortsForWindow(ports, sessionName, window.windowName);
 
@@ -153,17 +169,46 @@ function WindowRow({
 
       <div className="flex flex-wrap items-center gap-1 mt-0.5">
         {matchedPorts.map((p) => (
-          <span
-            key={p.port}
-            className="badge"
-            style={{
-              background: "rgba(0, 212, 255, 0.1)",
-              color: "#00d4ff",
-              border: "1px solid rgba(0, 212, 255, 0.25)",
-            }}
-          >
-            :{p.port}
-          </span>
+          <div key={p.port} className="flex items-center gap-1.5">
+            <span
+              className="badge"
+              style={{
+                background: "rgba(0, 212, 255, 0.1)",
+                color: "#00d4ff",
+                border: "1px solid rgba(0, 212, 255, 0.25)",
+              }}
+            >
+              :{p.port}
+            </span>
+            {exposedPorts.has(p.port) ? (
+              <button
+                type="button"
+                className="px-2 py-0.5 rounded text-[10px] font-semibold"
+                onClick={() => onUnexpose(p.port)}
+                disabled={unexposingPort === p.port}
+                style={{
+                  background: "rgba(255,68,68,0.12)",
+                  color: unexposingPort === p.port ? "#4a5568" : "#ff6b6b",
+                  border: "1px solid rgba(255,68,68,0.3)",
+                }}
+              >
+                {unexposingPort === p.port ? "Stopping…" : "Stop"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="px-2 py-0.5 rounded text-[10px] font-semibold"
+                onClick={() => onExpose(p)}
+                style={{
+                  background: "rgba(0,212,255,0.12)",
+                  color: "#00d4ff",
+                  border: "1px solid rgba(0,212,255,0.3)",
+                }}
+              >
+                Expose
+              </button>
+            )}
+          </div>
         ))}
       </div>
     </div>
@@ -175,11 +220,19 @@ function SessionCard({
   ports,
   defaultExpanded,
   onStopped,
+  exposedPorts,
+  onExpose,
+  onUnexpose,
+  unexposingPort,
 }: {
   session: TmuxSession;
   ports: PortInfo[];
   defaultExpanded: boolean;
   onStopped: () => void;
+  exposedPorts: Set<number>;
+  onExpose: (port: PortInfo) => void;
+  onUnexpose: (port: number) => void;
+  unexposingPort: number | null;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [stopping, setStopping] = useState(false);
@@ -348,6 +401,10 @@ function SessionCard({
                 window={w}
                 sessionName={session.name}
                 ports={ports}
+                exposedPorts={exposedPorts}
+                onExpose={onExpose}
+                onUnexpose={onUnexpose}
+                unexposingPort={unexposingPort}
               />
             ))
           )}
@@ -357,7 +414,56 @@ function SessionCard({
   );
 }
 
-export default function SessionsPanel({ sessions, ports, loading, onRefresh }: Props) {
+export default function SessionsPanel({ sessions, ports, loading, onRefresh, onExpose, onPortsChanged, refreshToken }: Props) {
+  const [exposedPorts, setExposedPorts] = useState<ExposedPort[]>([]);
+  const [exposedLoading, setExposedLoading] = useState(false);
+  const [unexposingPort, setUnexposingPort] = useState<number | null>(null);
+
+  const exposedSet = useMemo(() => new Set(exposedPorts.map((p) => p.port)), [exposedPorts]);
+
+  const fetchExposedPorts = useCallback(async () => {
+    setExposedLoading(true);
+    try {
+      const res = await fetch("/api/expose");
+      const data = await res.json();
+      setExposedPorts(data.ports ?? []);
+    } catch {
+      setExposedPorts([]);
+    } finally {
+      setExposedLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshToken;
+    void fetchExposedPorts();
+  }, [fetchExposedPorts, refreshToken]);
+
+  const handleUnexpose = useCallback(async (port: number) => {
+    if (unexposingPort !== null) return;
+    const ok = confirm(`Stop exposing port ${port}?`);
+    if (!ok) return;
+    setUnexposingPort(port);
+    try {
+      const res = await fetch("/api/expose", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ port }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        alert(data.message ?? "Failed to stop exposing port");
+        return;
+      }
+      await fetchExposedPorts();
+      onPortsChanged();
+    } catch {
+      alert("Network error while stopping exposed port");
+    } finally {
+      setUnexposingPort(null);
+    }
+  }, [unexposingPort, fetchExposedPorts, onPortsChanged]);
+
   return (
     <div className="flex flex-col gap-4">
       {/* Panel header */}
@@ -389,7 +495,7 @@ export default function SessionsPanel({ sessions, ports, loading, onRefresh }: P
             border: "1px solid rgba(0, 255, 136, 0.2)",
           }}
         >
-          {loading ? "…" : sessions.length}
+          {loading ? "…" : `${sessions.length} sessions · ${exposedLoading ? "…" : exposedPorts.length} exposed`}
         </span>
       </div>
 
@@ -453,6 +559,10 @@ export default function SessionsPanel({ sessions, ports, loading, onRefresh }: P
               ports={ports}
               defaultExpanded={false}
               onStopped={onRefresh}
+              exposedPorts={exposedSet}
+              onExpose={onExpose}
+              onUnexpose={handleUnexpose}
+              unexposingPort={unexposingPort}
             />
           ))}
         </div>

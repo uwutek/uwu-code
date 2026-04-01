@@ -296,8 +296,7 @@ export default function DashboardPage() {
     setExposeResult(null);
   };
 
-  const handleUnexpose = useCallback((_port: number) => {
-    // Refresh ports list after unexpose
+  const handlePortsChanged = useCallback(() => {
     fetch("/api/ports")
       .then((r) => r.json())
       .then((d) => {
@@ -326,13 +325,17 @@ export default function DashboardPage() {
       <CoreToolsPanel
         ports={ports}
         loading={loading}
-        publicIp={systemData?.publicIp ?? ""}
-        onExpose={handleExpose}
-        onUnexpose={handleUnexpose}
-        refreshToken={exposedRefreshToken}
       />
 
-      <SessionsPanel sessions={sessions} ports={ports} loading={loading} onRefresh={() => fetchAll(true)} />
+      <SessionsPanel
+        sessions={sessions}
+        ports={ports}
+        loading={loading}
+        onRefresh={() => fetchAll(true)}
+        onExpose={handleExpose}
+        onPortsChanged={handlePortsChanged}
+        refreshToken={exposedRefreshToken}
+      />
 
       {/* Row 4: Projects Panel (full width) */}
       <ProjectsPanel
