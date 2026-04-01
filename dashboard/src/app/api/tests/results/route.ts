@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
-import { getReadableProjectPaths } from "@/app/lib/tests-paths";
+import { getReadableProjectPaths, getDefaultPaths } from "@/app/lib/tests-paths";
 
 interface CaseResult {
   id: string;
@@ -53,13 +53,33 @@ function asRunResult(value: unknown, defaultProject: string, resultsDir: string)
 
   const normalizedResults = row.results
     .filter((item): item is CaseResult => !!item && typeof item === "object")
-    .map((item) => ({
-      ...item,
-      recording:
-        typeof item.recording === "string"
-          ? normalizeRecordingPath(item.recording, resultsDir)
-          : item.recording ?? undefined,
-    }));
+    .map((item) => {
+      const raw = item as unknown as Record<string, unknown>;
+      const caseId = typeof raw.case_id === "string" ? raw.case_id : undefined;
+      const statusStr = typeof raw.status === "string" ? raw.status.toUpperCase() : undefined;
+      const detailValue = typeof item.detail === "string"
+        ? item.detail
+        : typeof raw.detail === "object" && raw.detail
+        ? JSON.stringify(raw.detail)
+        : "";
+
+      return {
+        id: item.id ?? (caseId ? `${row.run_id}-${caseId}` : item.id),
+        label: item.label ?? caseId ?? "",
+        passed: typeof item.passed === "boolean"
+          ? item.passed
+          : statusStr === "PASS" || statusStr === "PASSED" || statusStr === "SUCCESS" || statusStr === "OK",
+        skipped: typeof item.skipped === "boolean"
+          ? item.skipped
+          : statusStr === "SKIP" || statusStr === "SKIPPED",
+        detail: detailValue,
+        duration_s: typeof item.duration_s === "number" ? item.duration_s : 0,
+        recording:
+          typeof item.recording === "string"
+            ? normalizeRecordingPath(item.recording, resultsDir)
+            : item.recording ?? undefined,
+      } as CaseResult;
+    });
 
   return {
     project: typeof row.project === "string" && row.project.length > 0 ? row.project : defaultProject,
@@ -442,20 +462,14 @@ function pushRunIfNew(results: RunResult[], runIds: Set<string>, run: RunResult)
   runIds.add(run.run_id);
 }
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const project = searchParams.get("project");
-  const limit = parseInt(searchParams.get("limit") ?? "10", 10);
-
-  if (!project || !/^[a-zA-Z0-9_-]+$/.test(project)) {
-    return NextResponse.json({ error: "Invalid project name" }, { status: 400 });
-  }
-
-  const projectPaths = getReadableProjectPaths(project);
-  const projectResultsDir = projectPaths.projectResultsDir;
-  if (!fs.existsSync(projectResultsDir)) {
-    return NextResponse.json({ results: [] });
-  }
+function collectResultsFromDir(
+  projectResultsDir: string,
+  resultsDir: string,
+  project: string,
+  results: RunResult[],
+  runIds: Set<string>,
+) {
+  if (!fs.existsSync(projectResultsDir)) return;
 
   const files = fs
     .readdirSync(projectResultsDir)
@@ -463,13 +477,10 @@ export async function GET(req: NextRequest) {
     .sort()
     .reverse();
 
-  const results: RunResult[] = [];
-  const runIds = new Set<string>();
-
   for (const file of files) {
     try {
       const content = JSON.parse(fs.readFileSync(path.join(projectResultsDir, file), "utf-8"));
-      const parsed = asRunResult(content, project, projectPaths.resultsDir);
+      const parsed = asRunResult(content, project, resultsDir);
       if (!parsed) continue;
       pushRunIfNew(results, runIds, parsed);
     } catch {
@@ -488,22 +499,40 @@ export async function GET(req: NextRequest) {
       try {
         const content = JSON.parse(fs.readFileSync(path.join(agentRunsDir, file), "utf-8"));
 
-        const parsedRun = asRunResult(content, project, projectPaths.resultsDir);
+        const parsedRun = asRunResult(content, project, resultsDir);
         if (parsedRun) {
-          parsedRun.results = parsedRun.results.map((item) => ({
-            ...item,
-            recording: typeof item.recording === "string" ? normalizeRecordingPath(item.recording, projectPaths.resultsDir) : item.recording,
-          }));
           pushRunIfNew(results, runIds, parsedRun);
           continue;
         }
 
         const parsedMeta = asAgentRunMeta(content);
         if (!parsedMeta || parsedMeta.status === "running") continue;
-        pushRunIfNew(results, runIds, toFallbackRun(parsedMeta, projectPaths.resultsDir));
+        pushRunIfNew(results, runIds, toFallbackRun(parsedMeta, resultsDir));
       } catch {
       }
     }
+  }
+}
+
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const project = searchParams.get("project");
+  const limit = parseInt(searchParams.get("limit") ?? "10", 10);
+
+  if (!project || !/^[a-zA-Z0-9_-]+$/.test(project)) {
+    return NextResponse.json({ error: "Invalid project name" }, { status: 400 });
+  }
+
+  const projectPaths = getReadableProjectPaths(project);
+  const defaultPaths = getDefaultPaths(project);
+
+  const results: RunResult[] = [];
+  const runIds = new Set<string>();
+
+  collectResultsFromDir(projectPaths.projectResultsDir, projectPaths.resultsDir, project, results, runIds);
+
+  if (defaultPaths.projectResultsDir !== projectPaths.projectResultsDir) {
+    collectResultsFromDir(defaultPaths.projectResultsDir, defaultPaths.resultsDir, project, results, runIds);
   }
 
   results.sort(sortByStartedAtDesc);

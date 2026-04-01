@@ -222,15 +222,7 @@ function buildRunnerCommand(target: DiscoverTarget, input: {
   const runWithOpencode = `cd ${shellQuote(REGRESSION_DIR)} && \"$OPENCODE_BIN\" run --dir ${shellQuote(REGRESSION_DIR)} ${shellQuote(prompt)}`;
   const fallbackToApi = `${curlCmd}`;
 
-  return [
-    opencodeLookup,
-    "if [ -z \"$OPENCODE_BIN\" ]; then",
-    "  echo \"opencode binary not found; falling back to direct Discoverer API\" >&2",
-    `  ${fallbackToApi}`,
-    "else",
-    `  ${runWithOpencode} || { echo \"opencode run failed; falling back to direct Discoverer API\" >&2; ${fallbackToApi}; }`,
-    "fi",
-  ].join("; ");
+  return `${opencodeLookup}; if [ -z "$OPENCODE_BIN" ]; then echo "opencode binary not found; falling back to direct Discoverer API" >&2; ${fallbackToApi}; else ${runWithOpencode} || { echo "opencode run failed; falling back to direct Discoverer API" >&2; ${fallbackToApi}; }; fi`;
 }
 
 function spawnBackgroundRun(meta: DiscoverRun) {
@@ -273,6 +265,11 @@ function spawnBackgroundRun(meta: DiscoverRun) {
         detached: true,
         stdio: "ignore",
       });
+
+  child.on("error", (err) => {
+    try { fs.writeFileSync(logAbs, `spawn error: ${err.message}\n`); } catch { /* best-effort */ }
+    try { fs.writeFileSync(exitAbs, "1"); } catch { /* best-effort */ }
+  });
 
   child.unref();
   return child.pid ?? 0;

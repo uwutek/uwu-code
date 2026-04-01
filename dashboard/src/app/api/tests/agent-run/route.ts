@@ -216,6 +216,11 @@ function spawnBackgroundRun(meta: AgentRun, prompt: string) {
         stdio: "ignore",
       });
 
+  child.on("error", (err) => {
+    try { fs.writeFileSync(logAbs, `spawn error: ${err.message}\n`); } catch { /* best-effort */ }
+    try { fs.writeFileSync(exitAbs, "1"); } catch { /* best-effort */ }
+  });
+
   child.unref();
   return child.pid ?? 0;
 }
