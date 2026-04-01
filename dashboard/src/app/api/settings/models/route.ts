@@ -25,8 +25,8 @@ export async function GET(_req: NextRequest) {
       const res = await fetch("https://openrouter.ai/api/v1/models", {
         headers: {
           Authorization: `Bearer ${openrouterKey}`,
-          "HTTP-Referer": "https://vpsdev.local",
-          "X-Title": "uwu-tester",
+          "HTTP-Referer": "https://uwu-code.local",
+          "X-Title": "uwu-code",
         },
         cache: "no-store",
       });

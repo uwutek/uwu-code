@@ -85,7 +85,7 @@ async function fetchGitHubRepos(owner: string): Promise<GitHubRepo[]> {
 
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
-    "User-Agent": "uwu-tester",
+    "User-Agent": "uwu-code",
   };
 
   const githubToken = process.env.GITHUB_TOKEN?.trim();

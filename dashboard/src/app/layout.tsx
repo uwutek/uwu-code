@@ -3,7 +3,7 @@ import "./globals.css";
 import Navbar from "./components/Navbar";
 
 export const metadata: Metadata = {
-  title: "VPS Dev Dashboard",
+  title: "uwu-code",
   description: "Web-based development environment manager for VPS",
 };
 

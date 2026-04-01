@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
         headers: {
           Authorization: `Bearer ${openrouterKey}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": "https://vpsdev.local",
+          "HTTP-Referer": "https://uwu-code.local",
           "X-Title": "openclaw",
         },
         body: JSON.stringify({ model: openrouterModel, messages: full, max_tokens: 4096 }),
