@@ -462,7 +462,7 @@ function pushRunIfNew(results: RunResult[], runIds: Set<string>, run: RunResult)
   runIds.add(run.run_id);
 }
 
-function collectResultsFromDir(
+function collectTopLevelResults(
   projectResultsDir: string,
   resultsDir: string,
   project: string,
@@ -486,30 +486,38 @@ function collectResultsFromDir(
     } catch {
     }
   }
+}
 
+function collectAgentRunResults(
+  projectResultsDir: string,
+  resultsDir: string,
+  project: string,
+  results: RunResult[],
+  runIds: Set<string>,
+) {
   const agentRunsDir = path.join(projectResultsDir, "agent_runs");
-  if (fs.existsSync(agentRunsDir)) {
-    const agentFiles = fs
-      .readdirSync(agentRunsDir)
-      .filter((f) => f.endsWith(".json"))
-      .sort()
-      .reverse();
+  if (!fs.existsSync(agentRunsDir)) return;
 
-    for (const file of agentFiles) {
-      try {
-        const content = JSON.parse(fs.readFileSync(path.join(agentRunsDir, file), "utf-8"));
+  const agentFiles = fs
+    .readdirSync(agentRunsDir)
+    .filter((f) => f.endsWith(".json"))
+    .sort()
+    .reverse();
 
-        const parsedRun = asRunResult(content, project, resultsDir);
-        if (parsedRun) {
-          pushRunIfNew(results, runIds, parsedRun);
-          continue;
-        }
+  for (const file of agentFiles) {
+    try {
+      const content = JSON.parse(fs.readFileSync(path.join(agentRunsDir, file), "utf-8"));
 
-        const parsedMeta = asAgentRunMeta(content);
-        if (!parsedMeta || parsedMeta.status === "running") continue;
-        pushRunIfNew(results, runIds, toFallbackRun(parsedMeta, resultsDir));
-      } catch {
+      const parsedRun = asRunResult(content, project, resultsDir);
+      if (parsedRun) {
+        pushRunIfNew(results, runIds, parsedRun);
+        continue;
       }
+
+      const parsedMeta = asAgentRunMeta(content);
+      if (!parsedMeta || parsedMeta.status === "running") continue;
+      pushRunIfNew(results, runIds, toFallbackRun(parsedMeta, resultsDir));
+    } catch {
     }
   }
 }
@@ -525,14 +533,20 @@ export async function GET(req: NextRequest) {
 
   const projectPaths = getReadableProjectPaths(project);
   const defaultPaths = getDefaultPaths(project);
+  const dirs = [projectPaths];
+  if (defaultPaths.projectResultsDir !== projectPaths.projectResultsDir) {
+    dirs.push(defaultPaths);
+  }
 
   const results: RunResult[] = [];
   const runIds = new Set<string>();
 
-  collectResultsFromDir(projectPaths.projectResultsDir, projectPaths.resultsDir, project, results, runIds);
+  for (const p of dirs) {
+    collectTopLevelResults(p.projectResultsDir, p.resultsDir, project, results, runIds);
+  }
 
-  if (defaultPaths.projectResultsDir !== projectPaths.projectResultsDir) {
-    collectResultsFromDir(defaultPaths.projectResultsDir, defaultPaths.resultsDir, project, results, runIds);
+  for (const p of dirs) {
+    collectAgentRunResults(p.projectResultsDir, p.resultsDir, project, results, runIds);
   }
 
   results.sort(sortByStartedAtDesc);
