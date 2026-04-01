@@ -36,6 +36,14 @@ function projectRunsDir(project: string) {
   return path.join(RESULTS_DIR, project, "agent_runs");
 }
 
+function ensureProjectResultDirs(project: string) {
+  const projectDir = path.join(RESULTS_DIR, project);
+  ensureDir(projectDir);
+  ensureDir(path.join(projectDir, "recordings"));
+  ensureDir(path.join(projectDir, "recordings", "manual"));
+  ensureDir(path.join(projectDir, "agent_runs"));
+}
+
 function runMetaFile(project: string, runId: string) {
   return path.join(projectRunsDir(project), `${runId}.json`);
 }
@@ -155,6 +163,7 @@ function buildPrompt(project: string, runId: string, workflowIds: string[], case
     "(c) If the page URL stays on signup/register after submitting but 'verifications' appears in localStorage (even as 'undefined') or no error text is visible, treat registration as SUCCESS — this app triggers phone OTP verification server-side without a page redirect.",
     `For every case, capture a recording and keep artifacts under results/${project}/recordings/manual/${runId}/<case_id>/.`,
     `After all cases, call save_results tool with full details and set run_id to ${runId}. Include recording path for each case.`,
+    "If save_results fails for any reason, still print final report lines exactly in this format: - `<case_id>`: PASS|FAIL|SKIPPED. Recording: `<absolute_or_results_relative_path>`.",
     "Finally return a detailed pass/fail report for each case.",
   ].join(" ");
 }
@@ -206,6 +215,7 @@ export async function POST(req: NextRequest) {
   }
 
   const runId = `${new Date().toISOString().replace(/[:.]/g, "").replace("Z", "Z")}-${Math.random().toString(36).slice(2, 8)}`;
+  ensureProjectResultDirs(project);
   const runsDir = projectRunsDir(project);
   ensureDir(runsDir);
 
