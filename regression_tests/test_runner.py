@@ -53,6 +53,8 @@ def _env_non_negative_int(name: str, default: int) -> int:
 
 RECORDING_TAIL_MS = _env_non_negative_int("UWU_RECORDING_TAIL_MS", 15000)
 
+SCRIPTED_CASE_IDS = {"web_register", "web_login", "web_smoke", "admin_login", "admin_smoke"}
+
 
 _JSON_RECOVERY_PATCHED = False
 
@@ -789,7 +791,7 @@ async def run_case(
     env: dict[str, str],
     recording_dir: Path | None = None,
 ) -> CaseResult:
-    if case.get("id") in {"web_register", "web_login", "web_smoke", "admin_login", "admin_smoke"}:
+    if case.get("id") in SCRIPTED_CASE_IDS:
         return await run_case_scripted(case, env, recording_dir)
 
     label = case.get("label", case["id"])
@@ -953,6 +955,9 @@ async def main() -> None:
     print(f"\nuwu-code: running {len(enabled_cases)} test case(s) for '{slug}'")
     print(f"Project: {config.get('description', slug)}\n")
 
+    # Check if any enabled case requires an LLM (i.e. is NOT scripted)
+    needs_llm = any(c.get("id") not in SCRIPTED_CASE_IDS for c in enabled_cases)
+
     openrouter_key = env.get("OPENROUTER_API_KEY", "")
     anthropic_key  = env.get("ANTHROPIC_API_KEY", "")
     openai_key     = env.get("OPENAI_API_KEY", "")
@@ -961,48 +966,51 @@ async def main() -> None:
     fallback_llm = None
     llm_label = ""
 
-    # Read model preference from settings.json (set via /settings UI)
-    settings_file = BASE_DIR.parent / "settings.json"
-    saved_tests_model: str | None = None
-    try:
-        import json as _json
-        saved_tests_model = _json.loads(settings_file.read_text()).get("models", {}).get("tests")
-    except Exception:
-        pass
+    if needs_llm:
+        # Read model preference from settings.json (set via /settings UI)
+        settings_file = BASE_DIR.parent / "settings.json"
+        saved_tests_model: str | None = None
+        try:
+            import json as _json
+            saved_tests_model = _json.loads(settings_file.read_text()).get("models", {}).get("tests")
+        except Exception:
+            pass
 
-    if openrouter_key:
-        model = saved_tests_model or env.get("OPENROUTER_MODEL", "google/gemma-3-27b-it:free")
-        if isinstance(model, str) and model.startswith("google/gemma-"):
-            from browser_use.llm.openrouter.serializer import OpenRouterMessageSerializer
+        if openrouter_key:
+            model = saved_tests_model or env.get("OPENROUTER_MODEL", "google/gemma-3-27b-it:free")
+            if isinstance(model, str) and model.startswith("google/gemma-"):
+                from browser_use.llm.openrouter.serializer import OpenRouterMessageSerializer
 
-            original_serialize = OpenRouterMessageSerializer.serialize_messages
+                original_serialize = OpenRouterMessageSerializer.serialize_messages
 
-            def patched_serialize(messages):
-                serialized = original_serialize(messages)
-                for item in serialized:
-                    if isinstance(item, dict) and item.get("role") == "system":
-                        item["role"] = "user"
-                return serialized
+                def patched_serialize(messages):
+                    serialized = original_serialize(messages)
+                    for item in serialized:
+                        if isinstance(item, dict) and item.get("role") == "system":
+                            item["role"] = "user"
+                    return serialized
 
-            OpenRouterMessageSerializer.serialize_messages = staticmethod(patched_serialize)
-            print(f"INFO: Enabled Gemma compatibility mode for {model} (system -> user role remap)")
-            install_json_recovery_patch()
-        llm = ChatOpenRouter(model=model, api_key=openrouter_key, timeout=180)
-        alt_model = env.get("OPENROUTER_ALT_MODEL", "google/gemma-3-4b-it:free")
-        if alt_model and alt_model != model:
-            fallback_llm = ChatOpenRouter(model=alt_model, api_key=openrouter_key, timeout=180)
-        llm_label = f"OpenRouter / {model}"
-    elif anthropic_key:
-        llm = ChatAnthropic(model="claude-3-5-haiku-20241022", api_key=anthropic_key, timeout=120, max_tokens=8096)
-        llm_label = "Anthropic / claude-3-5-haiku-20241022"
-    elif openai_key:
-        llm = ChatOpenAI(model="gpt-4o-mini", api_key=openai_key, timeout=120)
-        llm_label = "OpenAI / gpt-4o-mini"
+                OpenRouterMessageSerializer.serialize_messages = staticmethod(patched_serialize)
+                print(f"INFO: Enabled Gemma compatibility mode for {model} (system -> user role remap)")
+                install_json_recovery_patch()
+            llm = ChatOpenRouter(model=model, api_key=openrouter_key, timeout=180)
+            alt_model = env.get("OPENROUTER_ALT_MODEL", "google/gemma-3-4b-it:free")
+            if alt_model and alt_model != model:
+                fallback_llm = ChatOpenRouter(model=alt_model, api_key=openrouter_key, timeout=180)
+            llm_label = f"OpenRouter / {model}"
+        elif anthropic_key:
+            llm = ChatAnthropic(model="claude-3-5-haiku-20241022", api_key=anthropic_key, timeout=120, max_tokens=8096)
+            llm_label = "Anthropic / claude-3-5-haiku-20241022"
+        elif openai_key:
+            llm = ChatOpenAI(model="gpt-4o-mini", api_key=openai_key, timeout=120)
+            llm_label = "OpenAI / gpt-4o-mini"
+        else:
+            print("ERROR: No API key set — add OPENROUTER_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY")
+            sys.exit(1)
+
+        print(f"LLM: {llm_label}")
     else:
-        print("ERROR: No API key set — add OPENROUTER_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY")
-        sys.exit(1)
-
-    print(f"LLM: {llm_label}")
+        print("All cases are scripted — LLM not required")
 
     # Recording directory for this run
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
