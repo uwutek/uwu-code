@@ -78,10 +78,10 @@ function McpModal({
   const opencodeWriteConfig = `sudo mkdir -p /home/uwu/.config/opencode\nsudo tee /home/uwu/.config/opencode/config.json << 'MCPEOF'\n${opencodeMcpContent}\nMCPEOF`;
 
   // Claude Code prompt: Claude IS the browser agent — no external LLM needed.
-  const claudePrompt = `Read the test cases for the '${project}' project from the uwu-code MCP resource uwu://projects/${project}/cases. ${scopeInstruction} For each selected test case, YOU execute it as a browser agent: use Bash with headless playwright (python at /opt/vps-dashboard/regression_tests/.venv/bin/python) to navigate the app and verify the outcome. Do NOT call any run_tests tool. Capture recording artifacts for each case under results/${project}/recordings/manual/<run_id>/<case_id> and include recording paths in saved results. Recording paths must be relative to the results root (example: ${project}/recordings/manual/<run_id>/<case_id>/video.webm) and must not start with 'results/'. Keep recording running for at least 5 extra seconds after each case reaches its final assertion before closing the page/context. After all cases are done, call the save_results MCP tool to persist results, then give me a detailed pass/fail report with what you observed.`;
+  const claudePrompt = `Read the test cases for the '${project}' project from the uwu-code MCP resource uwu://projects/${project}/cases. ${scopeInstruction} For each selected test case, YOU execute it as a browser agent: use Bash with headless playwright (python at /opt/vps-dashboard/regression_tests/.venv/bin/python) to navigate the app and verify the outcome. Do NOT call any run_tests tool. For checkboxes always use locator.check(). If signup/registration includes Terms/Conditions or Privacy checkbox, you MUST check it before submit; if submit is blocked by terms/privacy validation it is FAIL. Registration is SUCCESS only with explicit signal: OTP/verification step reached, or clear success message, or localStorage 'verifications' has meaningful non-empty value. If URL stays on signup/register without explicit success, it is FAIL. Any visible validation/error text means FAIL. Capture recording artifacts for each case under results/${project}/recordings/manual/<run_id>/<case_id> and include recording paths in saved results. Recording paths must be relative to the results root (example: ${project}/recordings/manual/<run_id>/<case_id>/video.webm) and must not start with 'results/'. Keep recording running for at least 5 extra seconds after each case reaches its final assertion before closing the page/context. After all cases are done, call the save_results MCP tool to persist results, then give me a detailed pass/fail report with what you observed.`;
 
   // Opencode prompt: same self-executing approach
-  const opencodePrompt = `Read the test cases for the '${project}' project from the uwu-code MCP resource uwu://projects/${project}/cases. ${scopeInstruction} For each selected test case, YOU execute it as a browser agent: use Bash with headless playwright (python at /opt/vps-dashboard/regression_tests/.venv/bin/python) to navigate the app and verify the outcome. Do NOT call any run_tests tool and do NOT run test_runner.py. Capture recording artifacts for each case under results/${project}/recordings/manual/<run_id>/<case_id> and include recording paths in saved results. Recording paths must be relative to the results root (example: ${project}/recordings/manual/<run_id>/<case_id>/video.webm) and must not start with 'results/'. Keep recording running for at least 5 extra seconds after each case reaches its final assertion before closing the page/context. After all cases are done, call the save_results MCP tool to persist results, then give me a detailed pass/fail report with what you observed.`;
+  const opencodePrompt = `Read the test cases for the '${project}' project from the uwu-code MCP resource uwu://projects/${project}/cases. ${scopeInstruction} For each selected test case, YOU execute it as a browser agent: use Bash with headless playwright (python at /opt/vps-dashboard/regression_tests/.venv/bin/python) to navigate the app and verify the outcome. Do NOT call any run_tests tool and do NOT run test_runner.py. For checkboxes always use locator.check(). If signup/registration includes Terms/Conditions or Privacy checkbox, you MUST check it before submit; if submit is blocked by terms/privacy validation it is FAIL. Registration is SUCCESS only with explicit signal: OTP/verification step reached, or clear success message, or localStorage 'verifications' has meaningful non-empty value. If URL stays on signup/register without explicit success, it is FAIL. Any visible validation/error text means FAIL. Capture recording artifacts for each case under results/${project}/recordings/manual/<run_id>/<case_id> and include recording paths in saved results. Recording paths must be relative to the results root (example: ${project}/recordings/manual/<run_id>/<case_id>/video.webm) and must not start with 'results/'. Keep recording running for at least 5 extra seconds after each case reaches its final assertion before closing the page/context. After all cases are done, call the save_results MCP tool to persist results, then give me a detailed pass/fail report with what you observed.`;
 
   // Must cd /home/uwu so Claude uses the project scope where the MCP server is registered.
   // Run as uwu (non-root) so --dangerously-skip-permissions is accepted.
@@ -991,11 +991,18 @@ function DetailDisplay({ detail }: { detail: string }) {
 function RunResultCard({ run, defaultOpen }: { run: RunResult; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
   const [videoSrc, setVideoSrc] = useState<{ src: string; label: string } | null>(null);
+  const effectiveTotal = run.results.length > 0 ? run.results.length : run.total;
+  const effectivePassed = run.results.length > 0 ? run.results.filter((r) => r.passed).length : run.passed;
+  const effectiveSkipped = run.results.length > 0 ? run.results.filter((r) => r.skipped).length : run.skipped;
+  const effectiveFailed =
+    run.results.length > 0
+      ? run.results.filter((r) => !r.passed && !r.skipped).length
+      : run.failed;
 
   const statusColor =
-    run.failed > 0
+    effectiveFailed > 0
       ? "#ff4444"
-      : run.skipped > 0
+      : effectiveSkipped > 0
       ? "#ffd700"
       : "#00ff88";
 
@@ -1021,16 +1028,16 @@ function RunResultCard({ run, defaultOpen }: { run: RunResult; defaultOpen?: boo
         </div>
         <div className="flex items-center gap-4">
           <span className="text-xs" style={{ color: "#00ff88" }}>
-            {run.passed}/{run.total} passed
+            {effectivePassed}/{effectiveTotal} passed
           </span>
-          {run.failed > 0 && (
+          {effectiveFailed > 0 && (
             <span className="text-xs" style={{ color: "#ff4444" }}>
-              {run.failed} failed
+              {effectiveFailed} failed
             </span>
           )}
-          {run.skipped > 0 && (
+          {effectiveSkipped > 0 && (
             <span className="text-xs" style={{ color: "#ffd700" }}>
-              {run.skipped} skipped
+              {effectiveSkipped} skipped
             </span>
           )}
           <svg

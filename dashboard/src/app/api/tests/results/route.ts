@@ -37,6 +37,23 @@ interface AgentRunMeta {
   case_ids: string[];
 }
 
+function normalizeRunCounts(run: RunResult): RunResult {
+  if (run.results.length === 0) return run;
+
+  const total = run.results.length;
+  const passed = run.results.filter((item) => item.passed).length;
+  const skipped = run.results.filter((item) => item.skipped).length;
+  const failed = run.results.filter((item) => !item.passed && !item.skipped).length;
+
+  return {
+    ...run,
+    total,
+    passed,
+    failed,
+    skipped,
+  };
+}
+
 function parseStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -81,7 +98,7 @@ function asRunResult(value: unknown, defaultProject: string, resultsDir: string)
       } as CaseResult;
     });
 
-  return {
+  return normalizeRunCounts({
     project: typeof row.project === "string" && row.project.length > 0 ? row.project : defaultProject,
     run_id: row.run_id,
     started_at: row.started_at,
@@ -90,7 +107,7 @@ function asRunResult(value: unknown, defaultProject: string, resultsDir: string)
     failed: Number(row.failed ?? 0),
     skipped: Number(row.skipped ?? 0),
     results: normalizedResults,
-  };
+  });
 }
 
 function asAgentRunMeta(value: unknown): AgentRunMeta | null {
@@ -458,7 +475,7 @@ function sortByStartedAtDesc(a: RunResult, b: RunResult): number {
 
 function pushRunIfNew(results: RunResult[], runIds: Set<string>, run: RunResult) {
   if (runIds.has(run.run_id)) return;
-  results.push(run);
+  results.push(normalizeRunCounts(run));
   runIds.add(run.run_id);
 }
 
