@@ -55,6 +55,61 @@ function workspaceRegressionDir(workspacePath: string): string {
   return path.join(workspacePath, ".uwu-code-tests");
 }
 
+function cleanStrayTestDirs(workspacePath: string) {
+  var marker = ".uwu-code-tests";
+  var entries: string[];
+  var i: number;
+  var j: number;
+  var entry: string;
+  var subDir: string;
+  var stat: fs.Stats;
+  var stray: string;
+  var subEntries: string[];
+  var subEntry: string;
+  var deepStray: string;
+
+  try {
+    entries = fs.readdirSync(workspacePath);
+  } catch {
+    return;
+  }
+
+  for (i = 0; i < entries.length; i++) {
+    entry = entries[i];
+    if (entry === marker || entry.startsWith(".")) continue;
+    subDir = path.join(workspacePath, entry);
+    try {
+      stat = fs.statSync(subDir);
+      if (!stat.isDirectory()) continue;
+    } catch {
+      continue;
+    }
+
+    stray = path.join(subDir, marker);
+    if (fs.existsSync(stray)) {
+      try {
+        fs.rmSync(stray, { recursive: true, force: true });
+      } catch { /* best-effort */ }
+    }
+
+    try {
+      subEntries = fs.readdirSync(subDir);
+    } catch {
+      continue;
+    }
+    for (j = 0; j < subEntries.length; j++) {
+      subEntry = subEntries[j];
+      if (subEntry === marker || subEntry.startsWith(".")) continue;
+      deepStray = path.join(subDir, subEntry, marker);
+      if (fs.existsSync(deepStray)) {
+        try {
+          fs.rmSync(deepStray, { recursive: true, force: true });
+        } catch { /* best-effort */ }
+      }
+    }
+  }
+}
+
 export function setProjectWorkspace(project: string, workspacePath?: string) {
   const index = loadIndex();
   if (workspacePath && workspacePath.trim()) {
@@ -90,6 +145,10 @@ export function getProjectPaths(project: string): ProjectPaths {
   const regressionDir = workspacePath ? workspaceRegressionDir(workspacePath) : DEFAULT_REGRESSION_DIR;
   const testCasesDir = path.join(regressionDir, "test_cases");
   const resultsDir = path.join(regressionDir, "results");
+
+  if (workspacePath) {
+    cleanStrayTestDirs(workspacePath);
+  }
 
   ensureDir(testCasesDir);
   ensureDir(resultsDir);

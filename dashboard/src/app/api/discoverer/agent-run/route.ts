@@ -116,6 +116,27 @@ function extractResponse(absPath: string): unknown {
   }
 }
 
+function responseIssue(value: unknown): string | null {
+  if (!value || typeof value !== "object") {
+    return "No JSON response was produced by Discoverer.";
+  }
+
+  const row = value as Record<string, unknown>;
+  if (typeof row.error === "string" && row.error.trim()) {
+    return `Discoverer error: ${row.error.trim()}`;
+  }
+
+  if (typeof row.project !== "string" || !row.project.trim()) {
+    return "Discoverer response missing project field.";
+  }
+
+  if (!row.persisted || typeof row.persisted !== "object") {
+    return "Discoverer response missing persisted output details.";
+  }
+
+  return null;
+}
+
 function refreshMeta(meta: DiscoverRun): DiscoverRun {
   if (meta.status !== "running") return meta;
 
@@ -125,14 +146,17 @@ function refreshMeta(meta: DiscoverRun): DiscoverRun {
 
   if (fs.existsSync(exitAbs)) {
     const raw = fs.readFileSync(exitAbs, "utf-8").trim();
-    const code = Number(raw);
+    const parsedCode = Number(raw);
+    const code = Number.isFinite(parsedCode) ? parsedCode : 1;
     const response = extractResponse(responseAbs);
+    const issue = code === 0 ? responseIssue(response) : null;
+    const summary = readLogSummary(logAbs);
     const updated: DiscoverRun = {
       ...meta,
-      status: code === 0 ? "completed" : "failed",
+      status: code === 0 && !issue ? "completed" : "failed",
       completed_at: nowIso(),
-      exit_code: Number.isFinite(code) ? code : 1,
-      summary: readLogSummary(logAbs),
+      exit_code: code,
+      summary: issue ? (summary ? `${summary}\n${issue}` : issue) : summary,
       response,
     };
     saveMeta(updated);
@@ -180,7 +204,7 @@ function buildCurlCommand(payload: string): string {
   const secret = process.env.AUTH_SECRET?.trim() ?? "";
   const headers = [`-H 'Content-Type: application/json'`];
   if (secret) headers.push(`-H ${shellQuote(`x-internal-secret: ${secret}`)}`);
-  return `curl -sS -X POST http://127.0.0.1:${port}/api/discoverer ${headers.join(" ")} -d ${shellQuote(payload)}`;
+  return `curl -sSf -X POST http://127.0.0.1:${port}/api/discoverer ${headers.join(" ")} -d ${shellQuote(payload)}`;
 }
 
 function buildAgentPrompt(curlCmd: string, input: { project: string; workspacePath: string }) {
@@ -209,7 +233,8 @@ function buildRunnerCommand(target: DiscoverTarget, input: {
 
   const prompt = buildAgentPrompt(curlCmd, input);
   if (target === "claude") {
-    return `cd /home/uwu && claude --dangerously-skip-permissions -p ${shellQuote(prompt)}`;
+    const claudeCmd = `cd /home/uwu && claude --dangerously-skip-permissions -p ${shellQuote(prompt)}`;
+    return `(${claudeCmd}) 1>&2 || true; ${curlCmd}`;
   }
 
   const opencodeLookup = [
@@ -219,10 +244,9 @@ function buildRunnerCommand(target: DiscoverTarget, input: {
     "[ -z \"$OPENCODE_BIN\" ] && [ -x /home/uwu/.local/bin/opencode ] && OPENCODE_BIN=/home/uwu/.local/bin/opencode",
   ].join("; ");
 
-  const runWithOpencode = `cd ${shellQuote(REGRESSION_DIR)} && \"$OPENCODE_BIN\" run --dir ${shellQuote(REGRESSION_DIR)} ${shellQuote(prompt)}`;
-  const fallbackToApi = `${curlCmd}`;
+  const runWithOpencode = `if [ -z \"$OPENCODE_BIN\" ]; then echo \"opencode binary not found\" >&2; else cd ${shellQuote(REGRESSION_DIR)} && \"$OPENCODE_BIN\" run --dir ${shellQuote(REGRESSION_DIR)} ${shellQuote(prompt)}; fi`;
 
-  return `${opencodeLookup}; if [ -z "$OPENCODE_BIN" ]; then echo "opencode binary not found; falling back to direct Discoverer API" >&2; ${fallbackToApi}; else ${runWithOpencode} || { echo "opencode run failed; falling back to direct Discoverer API" >&2; ${fallbackToApi}; }; fi`;
+  return `${opencodeLookup}; (${runWithOpencode}) 1>&2 || true; ${curlCmd}`;
 }
 
 function spawnBackgroundRun(meta: DiscoverRun) {
@@ -267,8 +291,16 @@ function spawnBackgroundRun(meta: DiscoverRun) {
       });
 
   child.on("error", (err) => {
-    try { fs.writeFileSync(logAbs, `spawn error: ${err.message}\n`); } catch { /* best-effort */ }
-    try { fs.writeFileSync(exitAbs, "1"); } catch { /* best-effort */ }
+    try {
+      fs.writeFileSync(logAbs, `spawn error: ${err.message}\n`);
+    } catch (writeLogError) {
+      void writeLogError;
+    }
+    try {
+      fs.writeFileSync(exitAbs, "1");
+    } catch (writeExitError) {
+      void writeExitError;
+    }
   });
 
   child.unref();
