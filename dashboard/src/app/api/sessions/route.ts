@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -129,4 +129,24 @@ export async function GET() {
     console.error("[/api/sessions] Error:", error);
     return NextResponse.json({ sessions: [], error: "Failed to list sessions" });
   }
+}
+
+export async function DELETE(req: NextRequest) {
+  const sessionName = new URL(req.url).searchParams.get("name")?.trim() ?? "";
+  if (!sessionName || !/^[a-zA-Z0-9_.:-]+$/.test(sessionName)) {
+    return NextResponse.json({ success: false, error: "Invalid session name" }, { status: 400 });
+  }
+
+  const { stdout: tmuxCheck } = await runCommand("which tmux");
+  if (!tmuxCheck.trim()) {
+    return NextResponse.json({ success: false, error: "tmux not found" }, { status: 404 });
+  }
+
+  const escapedName = sessionName.replace(/"/g, '\\"');
+  const { stderr } = await runCommand(`tmux kill-session -t "${escapedName}" 2>&1`);
+  if (stderr && !/no session/i.test(stderr)) {
+    return NextResponse.json({ success: false, error: stderr.trim() || "Failed to stop session" }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true, name: sessionName });
 }

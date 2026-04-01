@@ -332,7 +332,7 @@ export default function DashboardPage() {
         refreshToken={exposedRefreshToken}
       />
 
-      <SessionsPanel sessions={sessions} ports={ports} loading={loading} />
+      <SessionsPanel sessions={sessions} ports={ports} loading={loading} onRefresh={() => fetchAll(true)} />
 
       {/* Row 4: Projects Panel (full width) */}
       <ProjectsPanel

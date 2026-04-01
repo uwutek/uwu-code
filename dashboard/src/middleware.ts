@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifySessionToken } from "@/app/lib/auth-token";
 
 const LOGIN_PATH = "/login";
 const PUBLIC_API_PATHS = new Set([
@@ -6,12 +7,13 @@ const PUBLIC_API_PATHS = new Set([
   "/api/auth/check",
 ]);
 
-function hasSessionCookie(request: NextRequest): boolean {
+async function isAuthenticated(request: NextRequest): Promise<boolean> {
   const token = request.cookies.get("uwu_session")?.value;
-  return typeof token === "string" && token.trim().length > 0;
+  const payload = await verifySessionToken(token);
+  return !!payload;
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   if (pathname.startsWith("/_next") || pathname === "/favicon.ico") {
@@ -22,7 +24,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const authenticated = hasSessionCookie(request);
+  const authenticated = await isAuthenticated(request);
 
   if (pathname === LOGIN_PATH) {
     if (authenticated) {

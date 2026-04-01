@@ -183,6 +183,31 @@ function CloneForm({ onClose, onCloned }: CloneFormProps) {
 export default function ProjectsPanel({ data, onRefresh }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [showCloneForm, setShowCloneForm] = useState(false);
+  const [deletingPath, setDeletingPath] = useState<string | null>(null);
+
+  const handleDeleteProject = async (projectPath: string, projectName: string) => {
+    if (deletingPath) return;
+    const ok = confirm(`Delete project "${projectName}" at ${projectPath}? This cannot be undone.`);
+    if (!ok) return;
+    setDeletingPath(projectPath);
+    try {
+      const res = await fetch("/api/projects", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectPath }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.message ?? "Failed to delete project");
+        return;
+      }
+      onRefresh();
+    } catch {
+      alert("Network error while deleting project");
+    } finally {
+      setDeletingPath(null);
+    }
+  };
 
   const totalProjects =
     data?.groups.reduce((sum, g) => sum + g.projects.length, 0) ?? 0;
@@ -323,7 +348,12 @@ export default function ProjectsPanel({ data, onRefresh }: Props) {
           ) : (
             <div className="space-y-4">
               {data.groups.map((group) => (
-                <GroupSection key={group.name} group={group} />
+                <GroupSection
+                  key={group.name}
+                  group={group}
+                  deletingPath={deletingPath}
+                  onDeleteProject={handleDeleteProject}
+                />
               ))}
             </div>
           )}
@@ -335,8 +365,12 @@ export default function ProjectsPanel({ data, onRefresh }: Props) {
 
 function GroupSection({
   group,
+  deletingPath,
+  onDeleteProject,
 }: {
   group: { name: string; path: string; projects: { name: string; path: string; lastModified: string; branch: string; remoteUrl: string }[] };
+  deletingPath: string | null;
+  onDeleteProject: (projectPath: string, projectName: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -397,7 +431,12 @@ function GroupSection({
       {expanded && (
         <div className="px-3 pb-3 space-y-2">
           {group.projects.map((proj) => (
-            <ProjectRow key={proj.path} project={proj} />
+            <ProjectRow
+              key={proj.path}
+              project={proj}
+              deleting={deletingPath === proj.path}
+              onDelete={() => onDeleteProject(proj.path, proj.name)}
+            />
           ))}
         </div>
       )}
@@ -407,8 +446,12 @@ function GroupSection({
 
 function ProjectRow({
   project,
+  deleting,
+  onDelete,
 }: {
   project: { name: string; path: string; lastModified: string; branch: string; remoteUrl: string };
+  deleting: boolean;
+  onDelete: () => void;
 }) {
   const terminalUrl = "https://code.vidwadeseram.com/terminal/";
 
@@ -471,42 +514,59 @@ function ProjectRow({
         </span>
       </div>
 
-      {/* Open Terminal button */}
-      <a
-        href={terminalUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all flex-shrink-0"
-        style={{
-          background: "rgba(0, 255, 136, 0.08)",
-          border: "1px solid rgba(0, 255, 136, 0.2)",
-          color: "#00ff88",
-          textDecoration: "none",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = "rgba(0, 255, 136, 0.16)";
-          e.currentTarget.style.borderColor = "rgba(0, 255, 136, 0.4)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = "rgba(0, 255, 136, 0.08)";
-          e.currentTarget.style.borderColor = "rgba(0, 255, 136, 0.2)";
-        }}
-      >
-        <svg
-          className="w-3 h-3"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Open Terminal button */}
+        <a
+          href={terminalUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all"
+          style={{
+            background: "rgba(0, 255, 136, 0.08)",
+            border: "1px solid rgba(0, 255, 136, 0.2)",
+            color: "#00ff88",
+            textDecoration: "none",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "rgba(0, 255, 136, 0.16)";
+            e.currentTarget.style.borderColor = "rgba(0, 255, 136, 0.4)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "rgba(0, 255, 136, 0.08)";
+            e.currentTarget.style.borderColor = "rgba(0, 255, 136, 0.2)";
+          }}
         >
-          <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-          <line x1="8" y1="21" x2="16" y2="21" />
-          <line x1="12" y1="17" x2="12" y2="21" />
-        </svg>
-        Terminal
-      </a>
+          <svg
+            className="w-3 h-3"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+            <line x1="8" y1="21" x2="16" y2="21" />
+            <line x1="12" y1="17" x2="12" y2="21" />
+          </svg>
+          Terminal
+        </a>
+
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={deleting}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all"
+          style={{
+            background: deleting ? "rgba(30,45,74,0.5)" : "rgba(255,68,68,0.1)",
+            border: "1px solid rgba(255,68,68,0.3)",
+            color: deleting ? "#4a5568" : "#ff4444",
+          }}
+          title="Delete project"
+        >
+          {deleting ? "Deleting…" : "Delete"}
+        </button>
+      </div>
     </div>
   );
 }

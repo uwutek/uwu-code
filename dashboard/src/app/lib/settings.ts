@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { NextRequest } from "next/server";
+import { verifySessionToken } from "@/app/lib/auth-token";
 
 const SETTINGS_FILE = path.join(process.cwd(), "..", "settings.json");
 const ENV_FILE = path.join(process.cwd(), "..", "regression_tests", ".env");
@@ -38,11 +39,12 @@ export function generateToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-export function checkAuth(req: NextRequest): boolean {
+export async function checkAuth(req: NextRequest): Promise<boolean> {
   const settings = readSettings();
   if (!settings.username) return false;
   const token = req.cookies.get("uwu_session")?.value;
-  return !!token && token === settings.session_token;
+  const payload = await verifySessionToken(token);
+  return !!payload && payload.username === settings.username;
 }
 
 // ── .env helpers ──────────────────────────────────────────────────────────────

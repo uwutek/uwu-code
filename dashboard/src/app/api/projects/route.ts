@@ -19,6 +19,13 @@ async function runCommand(cmd: string): Promise<string> {
   }
 }
 
+function isWithinProjectsRoot(candidate: string): boolean {
+  const normalizedRoot = path.resolve(PROJECTS_ROOT);
+  const normalizedCandidate = path.resolve(candidate);
+  if (normalizedCandidate === normalizedRoot) return false;
+  return normalizedCandidate.startsWith(`${normalizedRoot}${path.sep}`);
+}
+
 async function getGitBranch(dir: string): Promise<string> {
   return runCommand(`git -C "${dir}" branch --show-current`);
 }
@@ -376,5 +383,36 @@ export async function POST(req: NextRequest) {
       { success: false, message: msg },
       { status: 500 }
     );
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { projectPath } = body as { projectPath?: string };
+    if (!projectPath || typeof projectPath !== "string") {
+      return NextResponse.json({ success: false, message: "projectPath is required" }, { status: 400 });
+    }
+
+    const resolved = path.resolve(projectPath);
+    if (!isWithinProjectsRoot(resolved)) {
+      return NextResponse.json({ success: false, message: "Invalid project path" }, { status: 400 });
+    }
+
+    if (!fs.existsSync(resolved)) {
+      return NextResponse.json({ success: false, message: "Project path does not exist" }, { status: 404 });
+    }
+
+    const stat = fs.statSync(resolved);
+    if (!stat.isDirectory()) {
+      return NextResponse.json({ success: false, message: "Project path must be a directory" }, { status: 400 });
+    }
+
+    fs.rmSync(resolved, { recursive: true, force: false });
+    return NextResponse.json({ success: true, path: resolved });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Delete failed";
+    console.error("[/api/projects DELETE] Error:", msg);
+    return NextResponse.json({ success: false, message: msg }, { status: 500 });
   }
 }

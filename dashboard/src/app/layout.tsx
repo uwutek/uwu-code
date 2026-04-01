@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Navbar from "./components/Navbar";
+import AppLayout from "./components/AppLayout";
 
 export const metadata: Metadata = {
   title: "uwu-code",
@@ -15,8 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-grid min-h-screen" style={{ background: "#0a0e1a" }}>
-        <Navbar />
-        <main className="pt-14">{children}</main>
+        <AppLayout>{children}</AppLayout>
       </body>
     </html>
   );

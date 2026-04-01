@@ -6,7 +6,7 @@ import { checkAuth, readSettings, writeSettings, hashPassword, generateToken } f
 export async function POST(req: NextRequest) {
   const settings = readSettings();
   // Must be authenticated OR auth not yet configured (first-time setup)
-  if (settings.username && !checkAuth(req)) {
+  if (settings.username && !(await checkAuth(req))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  if (!checkAuth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!(await checkAuth(req))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   writeSettings({ username: "", password_hash: "", session_token: "" });
   const res = NextResponse.json({ ok: true });
   res.cookies.delete("uwu_session");

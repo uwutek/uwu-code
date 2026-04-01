@@ -7,6 +7,7 @@ interface Props {
   sessions: TmuxSession[];
   ports: PortInfo[];
   loading: boolean;
+  onRefresh: () => void;
 }
 
 function formatAge(created: number): string {
@@ -173,14 +174,37 @@ function SessionCard({
   session,
   ports,
   defaultExpanded,
+  onStopped,
 }: {
   session: TmuxSession;
   ports: PortInfo[];
   defaultExpanded: boolean;
+  onStopped: () => void;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const [stopping, setStopping] = useState(false);
   const sessionPorts = getPortsForSession(ports, session.name);
   const age = formatAge(session.created);
+
+  const handleStopSession = async () => {
+    if (stopping) return;
+    const ok = confirm(`Stop tmux session "${session.name}"?`);
+    if (!ok) return;
+    setStopping(true);
+    try {
+      const res = await fetch(`/api/sessions?name=${encodeURIComponent(session.name)}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error ?? "Failed to stop session");
+        return;
+      }
+      onStopped();
+    } catch {
+      alert("Network error while stopping session");
+    } finally {
+      setStopping(false);
+    }
+  };
 
   return (
     <div
@@ -191,6 +215,7 @@ function SessionCard({
     >
       {/* Session header */}
       <button
+        type="button"
         className="w-full flex items-center justify-between px-4 py-3 text-left transition-colors hover:bg-white/5"
         onClick={() => setExpanded((v) => !v)}
       >
@@ -288,6 +313,24 @@ function SessionCard({
               {age}
             </span>
           )}
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleStopSession();
+            }}
+            disabled={stopping}
+            className="px-2 py-0.5 rounded text-xs font-medium"
+            style={{
+              background: stopping ? "rgba(30,45,74,0.5)" : "rgba(255,68,68,0.12)",
+              border: "1px solid rgba(255,68,68,0.3)",
+              color: stopping ? "#4a5568" : "#ff4444",
+            }}
+            title="Stop tmux session"
+          >
+            {stopping ? "Stopping…" : "Stop"}
+          </button>
         </div>
       </button>
 
@@ -314,7 +357,7 @@ function SessionCard({
   );
 }
 
-export default function SessionsPanel({ sessions, ports, loading }: Props) {
+export default function SessionsPanel({ sessions, ports, loading, onRefresh }: Props) {
   return (
     <div className="flex flex-col gap-4">
       {/* Panel header */}
@@ -409,6 +452,7 @@ export default function SessionsPanel({ sessions, ports, loading }: Props) {
               session={session}
               ports={ports}
               defaultExpanded={false}
+              onStopped={onRefresh}
             />
           ))}
         </div>

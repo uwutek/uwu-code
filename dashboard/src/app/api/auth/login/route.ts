@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { readSettings, writeSettings, hashPassword, generateToken } from "@/app/lib/settings";
+import { createSessionToken } from "@/app/lib/auth-token";
 
 export async function POST(req: NextRequest) {
   const { username, password } = await req.json() as { username: string; password: string };
@@ -13,16 +14,17 @@ export async function POST(req: NextRequest) {
   }
 
   if (!settings.username) {
-    const token = generateToken();
+    const serverSessionToken = generateToken();
+    const cookieToken = await createSessionToken(userTrimmed);
     writeSettings({
       ...settings,
       username: userTrimmed,
       password_hash: hashPassword(password),
-      session_token: token,
+      session_token: serverSessionToken,
     });
 
     const res = NextResponse.json({ ok: true, initialized: true });
-    res.cookies.set("uwu_session", token, {
+    res.cookies.set("uwu_session", cookieToken, {
       httpOnly: true,
       path: "/",
       maxAge: 30 * 24 * 60 * 60,
@@ -35,11 +37,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
   }
 
-  const token = generateToken();
-  writeSettings({ ...settings, session_token: token });
+  const serverSessionToken = generateToken();
+  const cookieToken = await createSessionToken(settings.username);
+  writeSettings({ ...settings, session_token: serverSessionToken });
 
   const res = NextResponse.json({ ok: true });
-  res.cookies.set("uwu_session", token, {
+  res.cookies.set("uwu_session", cookieToken, {
     httpOnly: true,
     path: "/",
     maxAge: 30 * 24 * 60 * 60,

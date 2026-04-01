@@ -328,6 +328,7 @@ interface TestConfig {
   description: string;
   test_cases: TestCase[];
   workflows: Workflow[];
+  workspace_path?: string;
 }
 
 interface CaseResult {
@@ -364,6 +365,58 @@ interface AgentRun {
   summary?: string;
 }
 
+interface ProjectInfo {
+  name: string;
+  path: string;
+}
+
+interface ProjectGroup {
+  name: string;
+  path: string;
+  projects: ProjectInfo[];
+}
+
+interface ProjectsData {
+  groups: ProjectGroup[];
+}
+
+interface WorkspaceOption {
+  name: string;
+  path: string;
+  kind: "group" | "project";
+}
+
+function toWorkspaceOptions(data: ProjectsData): WorkspaceOption[] {
+  const options: WorkspaceOption[] = [];
+  for (const group of data.groups ?? []) {
+    if (group.path) {
+      options.push({ name: group.name || group.path, path: group.path, kind: "group" });
+    }
+    for (const project of group.projects ?? []) {
+      if (!project.path) continue;
+      options.push({
+        name: group.name ? `${group.name}/${project.name || project.path}` : (project.name || project.path),
+        path: project.path,
+        kind: "project",
+      });
+    }
+  }
+
+  if (options.length === 0) {
+    options.push({ name: "workspaces", path: "/opt/workspaces", kind: "group" });
+  }
+
+  const seen = new Set<string>();
+  const unique = options.filter((opt) => {
+    if (seen.has(opt.path)) return false;
+    seen.add(opt.path);
+    return true;
+  });
+
+  unique.sort((a, b) => a.name.localeCompare(b.name));
+  return unique;
+}
+
 /** Extract all {{VAR}} placeholders from a list of test cases */
 function extractVars(testCases: TestCase[]): string[] {
   const found: Record<string, true> = {};
@@ -387,6 +440,7 @@ function normalizeConfig(raw: Partial<TestConfig>): TestConfig {
     description: raw.description ?? "",
     test_cases: testCases,
     workflows,
+    workspace_path: typeof raw.workspace_path === "string" ? raw.workspace_path : undefined,
   };
 }
 
@@ -995,7 +1049,13 @@ export default function TestsPage() {
   const [showNewForm, setShowNewForm] = useState(false);
   const [showNewWorkflowForm, setShowNewWorkflowForm] = useState(false);
   const [newProjectSlug, setNewProjectSlug] = useState("");
+  const [newProjectFolder, setNewProjectFolder] = useState("");
   const [showNewProject, setShowNewProject] = useState(false);
+  const [workspaceOptions, setWorkspaceOptions] = useState<WorkspaceOption[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerError, setPickerError] = useState("");
+  const [pickerSearch, setPickerSearch] = useState("");
   const [envVars, setEnvVars] = useState<Record<string, string>>({});
   const [mcpModal, setMcpModal] = useState<McpTarget | null>(null);
   const [envSaving, setEnvSaving] = useState(false);
@@ -1016,6 +1076,35 @@ export default function TestsPage() {
       }
     }
   }, [selectedProject]);
+
+  const loadWorkspaceOptions = useCallback(async () => {
+    setPickerLoading(true);
+    setPickerError("");
+    try {
+      const res = await fetch("/api/projects");
+      if (!res.ok) {
+        setPickerError("Failed to load folders");
+        return;
+      }
+      const data = (await res.json()) as ProjectsData;
+      const next = toWorkspaceOptions(data);
+      setWorkspaceOptions(next);
+      if (!newProjectFolder && next.length > 0) {
+        setNewProjectFolder(next[0].path);
+      }
+    } catch {
+      setPickerError("Failed to load folders");
+    } finally {
+      setPickerLoading(false);
+    }
+  }, [newProjectFolder]);
+
+  const openProjectFolderPicker = useCallback(async () => {
+    setPickerOpen(true);
+    if (workspaceOptions.length === 0 && !pickerLoading) {
+      await loadWorkspaceOptions();
+    }
+  }, [workspaceOptions.length, pickerLoading, loadWorkspaceOptions]);
 
   // Load config for selected project
   const loadConfig = useCallback(async (slug: string) => {
@@ -1098,6 +1187,18 @@ export default function TestsPage() {
   useEffect(() => {
     loadProjects();
   }, [loadProjects]);
+
+  useEffect(() => {
+    if (!showNewProject) return;
+    void loadWorkspaceOptions();
+  }, [showNewProject, loadWorkspaceOptions]);
+
+  useEffect(() => {
+    if (!newProjectFolder) return;
+    if (newProjectSlug.trim()) return;
+    const inferred = slugify(newProjectFolder.split("/").filter(Boolean).at(-1) ?? "");
+    if (inferred) setNewProjectSlug(inferred);
+  }, [newProjectFolder, newProjectSlug]);
 
   useEffect(() => {
     if (!selectedProject) return;
@@ -1246,22 +1347,52 @@ export default function TestsPage() {
 
   const handleCreateProject = async () => {
     const slug = slugify(newProjectSlug);
-    if (!slug) return;
+    if (!slug || !newProjectFolder.trim()) return;
     const newConfig: TestConfig = {
       project: slug,
       description: newProjectSlug,
       test_cases: [],
       workflows: [],
+      workspace_path: newProjectFolder.trim(),
     };
-    await fetch(`/api/tests/cases?project=${encodeURIComponent(slug)}`, {
+    const res = await fetch(`/api/tests/cases?project=${encodeURIComponent(slug)}&create=1`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(newConfig),
     });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error ?? "Failed to create project");
+      return;
+    }
+    if (data.reused) {
+      alert(data.message ?? `Project "${slug}" already had compatible tests. Reusing existing files.`);
+    }
     await loadProjects();
     setSelectedProject(slug);
     setNewProjectSlug("");
+    setNewProjectFolder("");
+    setPickerSearch("");
     setShowNewProject(false);
+  };
+
+  const handleDeleteProject = async (slug: string) => {
+    const ok = confirm(`Delete test project "${slug}"? This removes test config, env vars, and run artifacts.`);
+    if (!ok) return;
+    const res = await fetch(`/api/tests/cases?project=${encodeURIComponent(slug)}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error ?? "Failed to delete project");
+      return;
+    }
+    await loadProjects();
+    setProjects((prev) => {
+      const next = prev.filter((p) => p !== slug);
+      if (selectedProject === slug) {
+        setSelectedProject(next.length > 0 ? next[0] : null);
+      }
+      return next;
+    });
   };
 
   const allCaseIds = config?.test_cases.map((c) => c.id) ?? [];
@@ -1429,22 +1560,46 @@ export default function TestsPage() {
           </div>
 
           {showNewProject && (
-            <div className="flex gap-2">
-              <input
-                className="flex-1 px-3 py-1.5 rounded text-xs outline-none"
-                style={INPUT_STYLE}
-                value={newProjectSlug}
-                onChange={(e) => setNewProjectSlug(e.target.value)}
-                placeholder="project-name"
-                onKeyDown={(e) => e.key === "Enter" && handleCreateProject()}
-                onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(0,212,255,0.4)")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(30,45,74,0.8)")}
-                autoFocus
-              />
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 px-3 py-1.5 rounded text-xs outline-none"
+                  style={INPUT_STYLE}
+                  value={newProjectSlug}
+                  onChange={(e) => setNewProjectSlug(e.target.value)}
+                  placeholder="project-name"
+                  onKeyDown={(e) => e.key === "Enter" && void handleCreateProject()}
+                  onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(0,212,255,0.4)")}
+                  onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(30,45,74,0.8)")}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => void openProjectFolderPicker()}
+                  className="px-3 py-1.5 rounded text-xs font-medium"
+                  style={BTN(true, "#00d4ff")}
+                >
+                  Folder
+                </button>
+              </div>
+
+              <div
+                className="px-3 py-1.5 rounded text-xs font-mono"
+                style={{
+                  background: "rgba(10,14,26,0.8)",
+                  border: "1px solid rgba(30,45,74,0.8)",
+                  color: newProjectFolder ? "#94a3b8" : "#4a5568",
+                }}
+                title={newProjectFolder || "No folder selected"}
+              >
+                {newProjectFolder || "No folder selected"}
+              </div>
+
               <button
-                onClick={handleCreateProject}
-                className="px-3 py-1.5 rounded text-xs font-medium"
-                style={BTN(!!newProjectSlug.trim(), "#00ff88")}
+                type="button"
+                onClick={() => void handleCreateProject()}
+                className="w-full px-3 py-1.5 rounded text-xs font-medium"
+                style={BTN(!!newProjectSlug.trim() && !!newProjectFolder.trim(), "#00ff88")}
               >
                 Create
               </button>
@@ -1458,25 +1613,36 @@ export default function TestsPage() {
           ) : (
             <div className="space-y-1">
               {projects.map((slug) => (
-                <button
-                  key={slug}
-                  onClick={() => setSelectedProject(slug)}
-                  className="w-full text-left px-3 py-2.5 rounded text-sm font-mono transition-all"
-                  style={{
-                    background:
-                      selectedProject === slug
-                        ? "rgba(168,85,247,0.12)"
-                        : "rgba(30,45,74,0.3)",
-                    border: `1px solid ${
-                      selectedProject === slug
-                        ? "rgba(168,85,247,0.3)"
-                        : "rgba(30,45,74,0.5)"
-                    }`,
-                    color: selectedProject === slug ? "#a855f7" : "#94a3b8",
-                  }}
-                >
-                  {slug}
-                </button>
+                <div key={slug} className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProject(slug)}
+                    className="flex-1 text-left px-3 py-2.5 rounded text-sm font-mono transition-all"
+                    style={{
+                      background:
+                        selectedProject === slug
+                          ? "rgba(168,85,247,0.12)"
+                          : "rgba(30,45,74,0.3)",
+                      border: `1px solid ${
+                        selectedProject === slug
+                          ? "rgba(168,85,247,0.3)"
+                          : "rgba(30,45,74,0.5)"
+                      }`,
+                      color: selectedProject === slug ? "#a855f7" : "#94a3b8",
+                    }}
+                  >
+                    {slug}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteProject(slug)}
+                    className="w-8 h-8 rounded flex items-center justify-center"
+                    style={BTN(true, "#ff4444")}
+                    title={`Delete ${slug}`}
+                  >
+                    ×
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -1959,6 +2125,92 @@ export default function TestsPage() {
           onBackgroundStarted={handleBackgroundStarted}
           onClose={() => setMcpModal(null)}
         />
+      )}
+
+      {pickerOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setPickerOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-2xl max-h-[75vh] flex flex-col rounded-lg overflow-hidden"
+            style={{ background: "#0f1629", border: "1px solid #1e2d4a" }}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#1e2d4a" }}>
+              <div className="text-sm font-semibold" style={{ color: "#00d4ff" }}>Select Folder for Test Project</div>
+              <button
+                type="button"
+                onClick={() => setPickerOpen(false)}
+                className="text-xs px-2 py-1 rounded"
+                style={{ background: "rgba(30,45,74,0.6)", color: "#94a3b8", border: "1px solid #1e2d4a" }}
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            <div className="px-4 py-3 border-b" style={{ borderColor: "#1e2d4a" }}>
+              <input
+                type="text"
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+                placeholder="Search folders..."
+                className="w-full px-3 py-2 rounded text-sm"
+                style={{ background: "#0f172a", color: "#e2e8f0", border: "1px solid #1e2d4a" }}
+              />
+            </div>
+
+            <div className="p-3 overflow-y-auto space-y-2" style={{ maxHeight: "50vh" }}>
+              {pickerLoading && (
+                <div className="text-xs px-3 py-2 rounded" style={{ color: "#94a3b8", background: "rgba(30,45,74,0.3)" }}>
+                  Loading folders...
+                </div>
+              )}
+              {pickerError && (
+                <div className="text-xs px-3 py-2 rounded" style={{ color: "#ff4444", background: "rgba(255,68,68,0.1)", border: "1px solid rgba(255,68,68,0.2)" }}>
+                  {pickerError}
+                </div>
+              )}
+
+              {!pickerLoading && workspaceOptions
+                .filter((opt) => {
+                  if (!pickerSearch.trim()) return true;
+                  const q = pickerSearch.toLowerCase();
+                  return opt.name.toLowerCase().includes(q) || opt.path.toLowerCase().includes(q);
+                })
+                .map((opt) => (
+                  <button
+                    key={opt.path}
+                    type="button"
+                    onClick={() => {
+                      setNewProjectFolder(opt.path);
+                      if (!newProjectSlug.trim()) {
+                        const inferred = slugify(opt.path.split("/").filter(Boolean).at(-1) ?? "");
+                        if (inferred) setNewProjectSlug(inferred);
+                      }
+                      setPickerOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded transition-opacity hover:opacity-85"
+                    style={{
+                      background: "rgba(30,45,74,0.35)",
+                      border: newProjectFolder === opt.path ? "1px solid rgba(0,212,255,0.55)" : "1px solid rgba(30,45,74,0.7)",
+                    }}
+                  >
+                    <div className="text-xs font-semibold" style={{ color: opt.kind === "project" ? "#00d4ff" : "#ffd700" }}>
+                      {opt.name}
+                    </div>
+                    <div className="text-xs font-mono" style={{ color: "#94a3b8" }}>
+                      {opt.path}
+                    </div>
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
