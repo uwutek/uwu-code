@@ -6,7 +6,7 @@ import { allowedWorkspaceRoots, upsertKnowledgeIndex } from "@/app/lib/discovere
 export type DiscoverGenerationTarget = "api" | "claude" | "opencode";
 
 export interface DiscovererHistoryChange {
-  kind: "tests" | "docs";
+  kind: "tests" | "docs" | "spec";
   path: string;
   existedBefore: boolean;
   existsAfter: boolean;
@@ -41,6 +41,7 @@ interface RecordHistoryInput {
   generationTarget: DiscoverGenerationTarget;
   generationModel?: string;
   generationWarning?: string;
+  spec?: SnapshotInput;
   tests?: SnapshotInput;
   docs?: SnapshotInput;
 }
@@ -76,14 +77,14 @@ function readTextIfExists(filePath: string): string | null {
   }
 }
 
-function writeSnapshot(entryId: string, kind: "tests" | "docs", stage: "before" | "after", content: string): string {
+function writeSnapshot(entryId: string, kind: "tests" | "docs" | "spec", stage: "before" | "after", content: string): string {
   ensureDir(SNAPSHOTS_DIR);
   const filePath = path.join(SNAPSHOTS_DIR, `${entryId}.${kind}.${stage}.txt`);
   fs.writeFileSync(filePath, content);
   return filePath;
 }
 
-function buildChange(entryId: string, kind: "tests" | "docs", targetPath: string, beforeContent: string | null): DiscovererHistoryChange {
+function buildChange(entryId: string, kind: "tests" | "docs" | "spec", targetPath: string, beforeContent: string | null): DiscovererHistoryChange {
   const absPath = normalizePath(targetPath);
   const afterContent = readTextIfExists(absPath);
   const existedBefore = beforeContent !== null;
@@ -128,15 +129,19 @@ function isUnderAllowedRoot(candidate: string): boolean {
 }
 
 export function recordDiscovererHistory(input: RecordHistoryInput): DiscovererHistoryEntry | null {
+  const hasSpec = Boolean(input.spec?.path);
   const hasTests = Boolean(input.tests?.path);
   const hasDocs = Boolean(input.docs?.path);
-  if (!hasTests && !hasDocs) return null;
+  if (!hasSpec && !hasTests && !hasDocs) return null;
 
   ensureDir(ENTRIES_DIR);
 
   const id = `${new Date().toISOString().replace(/[:.]/g, "").replace("Z", "Z")}-${Math.random().toString(36).slice(2, 8)}`;
   const changes: DiscovererHistoryChange[] = [];
 
+  if (input.spec?.path) {
+    changes.push(buildChange(id, "spec", input.spec.path, input.spec.beforeContent));
+  }
   if (input.tests?.path) {
     changes.push(buildChange(id, "tests", input.tests.path, input.tests.beforeContent));
   }

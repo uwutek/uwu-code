@@ -25,11 +25,13 @@ export const dynamic = "force-dynamic";
 
 const REGRESSION_DIR = path.join(process.cwd(), "..", "regression_tests");
 const TEST_CASES_DIR = path.join(REGRESSION_DIR, "test_cases");
+const DISCOVERER_SPECS_DIR = path.join(REGRESSION_DIR, "specs");
 const DISCOVERER_PROMPT_DIR = path.join(REGRESSION_DIR, "results", "discoverer", "cli_prompts");
 
 interface DiscovererRequest {
   workspacePath?: string;
   project?: string;
+  sourceUrl?: string;
   persistTests?: boolean;
   persistDocs?: boolean;
   testSavePath?: string;
@@ -98,6 +100,61 @@ function trimErrorMessage(raw: string, maxChars = 420): string {
   const compact = raw.replace(/\s+/g, " ").trim();
   if (!compact) return "Discoverer generation failed";
   return compact.length > maxChars ? `${compact.slice(0, maxChars)}…` : compact;
+}
+
+function normalizeSourceUrl(raw: string): string | null {
+  const value = raw.trim();
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function discovererApiModel(): string {
+  const settings = readSettings();
+  return settings.models?.discoverer_api ?? settings.models?.discoverer ?? "openrouter/free";
+}
+
+function discovererCliModel(target: "claude" | "opencode"): string {
+  const settings = readSettings();
+  if (target === "claude") {
+    return settings.models?.discoverer_claude ?? "sonnet";
+  }
+  return settings.models?.discoverer_opencode ?? "opencode/qwen3.6-plus-free";
+}
+
+function buildFallbackSpec(project: string, sourceUrl: string, context: ReturnType<typeof collectWorkspaceContext>): string {
+  const stack = context.stackHints.length > 0 ? context.stackHints.join(", ") : "unknown";
+  const routes = context.routeHints.slice(0, 20);
+  const scripts = context.runScripts.slice(0, 12);
+  return [
+    `# Discoverer Playwright Spec — ${project}`,
+    "",
+    `## Target URL`,
+    sourceUrl,
+    "",
+    `## Workspace`,
+    `- Path: ${context.workspacePath}`,
+    `- Name: ${context.workspaceName}`,
+    `- Stack hints: ${stack}`,
+    "",
+    "## Navigation Scope",
+    ...(routes.length > 0 ? routes.map((route) => `- ${route}`) : ["- Explore top-level pages linked from the target URL"]),
+    "",
+    "## Runtime Hints",
+    ...(scripts.length > 0 ? scripts.map((script) => `- ${script}`) : ["- No package scripts detected"]),
+    "",
+    "## Required Outcomes",
+    "- Build test cases for homepage load, primary navigation, core forms, and API smoke behavior.",
+    "- Include failure assertions for visible errors and HTTP >= 400 responses.",
+    "- Keep selectors stable and avoid brittle nth-child selectors.",
+  ].join("\n");
 }
 
 function writeCliPromptFile(target: "claude" | "opencode", project: string, prompt: string): string {
@@ -246,15 +303,18 @@ function normalizeAiOutput(project: string, raw: unknown): DiscovererAiOutput {
   };
 }
 
-async function generateWithModel(project: string, context: ReturnType<typeof collectWorkspaceContext>): Promise<{ testConfig: DiscovererTestConfig; agentDocs: string; model: string }> {
+async function generateWithModel(
+  project: string,
+  context: ReturnType<typeof collectWorkspaceContext>,
+  options?: { sourceUrl?: string; spec?: string }
+): Promise<{ testConfig: DiscovererTestConfig; agentDocs: string; model: string }> {
   const keys = readEnvKeys();
   const openrouterKey = keys.OPENROUTER_API_KEY;
   if (!openrouterKey) {
     throw new Error("OpenRouter API key is required for Discoverer generation. Add it in Settings > API Keys.");
   }
 
-  const settings = readSettings();
-  const model = settings.models?.discoverer ?? "openrouter/free";
+  const model = discovererApiModel();
 
   const userPrompt = [
     "Generate realistic, workspace-specific QA artifacts.",
@@ -270,6 +330,9 @@ async function generateWithModel(project: string, context: ReturnType<typeof col
     "- Use placeholders like {{BASE_URL}}, {{LOGIN_ID}}, {{PASSWORD}} only when required.",
     "- Do not output markdown fences. Output JSON only.",
     "- case_ids in workflows must reference generated test case ids.",
+    options?.sourceUrl ? `Target URL to validate with Playwright MCP/spec: ${options.sourceUrl}` : "",
+    options?.spec ? "Use this Playwright exploration spec as primary source of truth before workspace context:" : "",
+    options?.spec ?? "",
     "Workspace context:",
     JSON.stringify(compactWorkspaceContext(context), null, 2),
   ].join("\n");
@@ -324,6 +387,77 @@ async function generateWithModel(project: string, context: ReturnType<typeof col
     agentDocs: normalized.agent_docs,
     model,
   };
+}
+
+async function generateSpecWithModel(
+  project: string,
+  sourceUrl: string,
+  context: ReturnType<typeof collectWorkspaceContext>
+): Promise<{ spec: string; model: string }> {
+  const keys = readEnvKeys();
+  const openrouterKey = keys.OPENROUTER_API_KEY;
+  if (!openrouterKey) {
+    throw new Error("OpenRouter API key is required for Discoverer spec generation.");
+  }
+
+  const model = discovererApiModel();
+  const prompt = [
+    "You are Discoverer running a Playwright-MCP-first planning pass.",
+    "Create a concise markdown spec for E2E generation from the target URL.",
+    "The output MUST be markdown (no code fences) with these sections:",
+    "# Discoverer Playwright Spec",
+    "## Target URL",
+    "## Page map",
+    "## Critical user journeys",
+    "## Assertions",
+    "## Test data assumptions",
+    "Rules:",
+    "- Prioritize robust selectors and deterministic assertions.",
+    "- Include API/network failure coverage and visible error states.",
+    "- Keep it specific to this app and URL.",
+    `Target URL: ${sourceUrl}`,
+    "Workspace context:",
+    JSON.stringify(compactWorkspaceContext(context), null, 2),
+  ].join("\n");
+
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${openrouterKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://uwu-code.local",
+      "X-Title": "discoverer-spec",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 2500,
+      temperature: 0.2,
+      messages: [
+        {
+          role: "system",
+          content: "You produce Playwright test planning specs in markdown.",
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({}));
+    const message = (errorBody as { error?: { message?: string } })?.error?.message;
+    throw new Error(message || `Discoverer spec request failed (${res.status})`);
+  }
+
+  const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+  const content = data.choices?.[0]?.message?.content?.trim() ?? "";
+  if (!content) {
+    throw new Error("Discoverer spec generation returned empty content");
+  }
+
+  return { spec: content, model };
 }
 
 function runCli(
@@ -396,7 +530,10 @@ function resolveCommandCandidates(target: "claude" | "opencode"): string[] {
   ].filter(Boolean);
 }
 
-function discovererCliPrompt(context: ReturnType<typeof collectWorkspaceContext>): string {
+function discovererCliPrompt(
+  context: ReturnType<typeof collectWorkspaceContext>,
+  options?: { sourceUrl?: string; spec?: string }
+): string {
   return [
     "You are Discoverer. Generate realistic, workspace-specific QA artifacts.",
     "Return strictly valid JSON with this exact shape:",
@@ -411,6 +548,9 @@ function discovererCliPrompt(context: ReturnType<typeof collectWorkspaceContext>
     "- Use placeholders like {{BASE_URL}}, {{LOGIN_ID}}, {{PASSWORD}} only when required.",
     "- Do not output markdown fences. Output JSON only.",
     "- case_ids in workflows must reference generated test case ids.",
+    options?.sourceUrl ? `Target URL to validate with Playwright MCP/spec: ${options.sourceUrl}` : "",
+    options?.spec ? "Use this Playwright exploration spec as primary source of truth before workspace context:" : "",
+    options?.spec ?? "",
     "Workspace context:",
     JSON.stringify(compactWorkspaceContext(context), null, 2),
   ].join("\n");
@@ -419,11 +559,13 @@ function discovererCliPrompt(context: ReturnType<typeof collectWorkspaceContext>
 async function generateWithCli(
   target: "claude" | "opencode",
   project: string,
-  context: ReturnType<typeof collectWorkspaceContext>
+  context: ReturnType<typeof collectWorkspaceContext>,
+  options?: { sourceUrl?: string; spec?: string }
 ): Promise<{ testConfig: DiscovererTestConfig; agentDocs: string; model: string }> {
-  const prompt = discovererCliPrompt(context);
+  const prompt = discovererCliPrompt(context, options);
   const promptFile = writeCliPromptFile(target, project, prompt);
   const candidates = resolveCommandCandidates(target);
+  const configuredModel = discovererCliModel(target);
   const cwd = context.workspacePath;
   const envKeys = readEnvKeys();
   const runtimeHome = (() => {
@@ -480,7 +622,7 @@ async function generateWithCli(
       ? [
           {
             name: "default",
-            args: ["--dangerously-skip-permissions", "-p", prompt],
+            args: ["--dangerously-skip-permissions", "--model", configuredModel, "-p", prompt],
           },
         ]
       : [
@@ -490,6 +632,8 @@ async function generateWithCli(
               "run",
               "--dir",
               context.workspacePath,
+              "--model",
+              configuredModel,
               "-f",
               promptFile,
               "Read the attached file and output ONLY the final JSON object requested there.",
@@ -502,6 +646,8 @@ async function generateWithCli(
               "--pure",
               "--dir",
               context.workspacePath,
+              "--model",
+              configuredModel,
               "-f",
               promptFile,
               "Read the attached file and output ONLY the final JSON object requested there.",
@@ -550,6 +696,84 @@ async function generateWithCli(
   throw new Error(trimErrorMessage(attemptErrors.join(" | ") || `${target} CLI generation failed`, 900));
 }
 
+async function generateSpecWithCli(
+  target: "claude" | "opencode",
+  project: string,
+  sourceUrl: string,
+  context: ReturnType<typeof collectWorkspaceContext>
+): Promise<{ spec: string; model: string }> {
+  const prompt = [
+    "You are Discoverer running a Playwright-MCP-first planning pass.",
+    "Create a concise markdown spec for E2E generation from the target URL.",
+    "Output markdown only (no code fences) with sections:",
+    "# Discoverer Playwright Spec",
+    "## Target URL",
+    "## Page map",
+    "## Critical user journeys",
+    "## Assertions",
+    "## Test data assumptions",
+    `Target URL: ${sourceUrl}`,
+    "Workspace context:",
+    JSON.stringify(compactWorkspaceContext(context), null, 2),
+  ].join("\n");
+
+  const promptFile = writeCliPromptFile(target, project, prompt);
+  const candidates = resolveCommandCandidates(target);
+  const configuredModel = discovererCliModel(target);
+  const cwd = context.workspacePath;
+  const envKeys = readEnvKeys();
+
+  const envOverrides: Record<string, string> = {};
+  for (const key of ["OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"] as const) {
+    const value = envKeys[key]?.trim();
+    if (value) {
+      envOverrides[key] = value;
+    }
+  }
+
+  const attemptErrors: string[] = [];
+  for (const command of candidates) {
+    const envStrip = target === "opencode"
+      ? ["OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CLIENT"]
+      : [];
+
+    const versionCheck = await runCli(command, ["--version"], cwd, envOverrides, envStrip);
+    if (versionCheck.code !== 0) {
+      const reason = versionCheck.stderr.trim() || versionCheck.stdout.trim() || versionCheck.errorMessage || "no output";
+      attemptErrors.push(`${target} command '${command}' is not runnable: ${reason}`);
+      continue;
+    }
+
+    const args = target === "claude"
+      ? ["--dangerously-skip-permissions", "--model", configuredModel, "-p", prompt]
+      : [
+          "run",
+          "--dir",
+          context.workspacePath,
+          "--model",
+          configuredModel,
+          "-f",
+          promptFile,
+          "Read the attached file and output only the requested markdown spec.",
+        ];
+
+    const result = await runCli(command, args, cwd, envOverrides, envStrip);
+    const output = result.stdout.trim() || result.stderr.trim();
+    if (result.code !== 0 || !output) {
+      const reason = summarizeCliText(output || result.errorMessage || "no output");
+      attemptErrors.push(`${target} spec generation failed: ${reason}`);
+      continue;
+    }
+
+    return {
+      spec: output,
+      model: `cli/${target}/${configuredModel}`,
+    };
+  }
+
+  throw new Error(trimErrorMessage(attemptErrors.join(" | ") || `${target} spec generation failed`, 900));
+}
+
 export async function POST(req: NextRequest) {
   let body: unknown;
   try {
@@ -569,6 +793,9 @@ export async function POST(req: NextRequest) {
   }
   if (parsed.project !== undefined && typeof parsed.project !== "string") {
     return NextResponse.json({ error: "project must be a string" }, { status: 400 });
+  }
+  if (parsed.sourceUrl !== undefined && typeof parsed.sourceUrl !== "string") {
+    return NextResponse.json({ error: "sourceUrl must be a string" }, { status: 400 });
   }
   if (parsed.persistTests !== undefined && typeof parsed.persistTests !== "boolean") {
     return NextResponse.json({ error: "persistTests must be a boolean" }, { status: 400 });
@@ -603,6 +830,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unable to infer a valid project slug" }, { status: 400 });
   }
 
+  const sourceUrl = normalizeSourceUrl(parsed.sourceUrl ?? "");
+  if (!sourceUrl) {
+    return NextResponse.json({ error: "sourceUrl (http/https) is required for Discoverer" }, { status: 400 });
+  }
+
   const persistTests = parsed.persistTests !== false;
   const persistDocs = parsed.persistDocs !== false;
   const testSavePath = (parsed.testSavePath ?? "").trim();
@@ -633,13 +865,28 @@ export async function POST(req: NextRequest) {
 
   let generatedTestConfig: DiscovererTestConfig;
   let agentDocs: string;
+  let generatedSpec = "";
+  let specModel = "";
   let generationModel = "";
   let generationWarning = "";
 
   try {
+    const specGenerated = generationTarget === "api"
+      ? await generateSpecWithModel(project, sourceUrl, context)
+      : await generateSpecWithCli(generationTarget, project, sourceUrl, context);
+    generatedSpec = specGenerated.spec;
+    specModel = specGenerated.model;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Discoverer spec generation failed";
+    generatedSpec = buildFallbackSpec(project, sourceUrl, context);
+    specModel = "fallback/local-spec";
+    generationWarning = `${trimErrorMessage(message)}. Used local fallback spec generation.`;
+  }
+
+  try {
     const generated = generationTarget === "api"
-      ? await generateWithModel(project, context)
-      : await generateWithCli(generationTarget, project, context);
+      ? await generateWithModel(project, context, { sourceUrl, spec: generatedSpec })
+      : await generateWithCli(generationTarget, project, context, { sourceUrl, spec: generatedSpec });
     generatedTestConfig = generated.testConfig;
     agentDocs = generated.agentDocs;
     generationModel = generated.model;
@@ -648,16 +895,23 @@ export async function POST(req: NextRequest) {
     generatedTestConfig = buildTestConfigFromContext(project, context);
     agentDocs = buildAgentDocs(project, context);
     generationModel = "fallback/local-context";
-    generationWarning = `${trimErrorMessage(message)}. Used local workspace fallback generation.`;
+    generationWarning = [generationWarning, `${trimErrorMessage(message)}. Used local workspace fallback generation.`]
+      .filter(Boolean)
+      .join(" ");
   }
 
   let effectiveTestConfig = generatedTestConfig;
 
+  let specFile = "";
   let testCasesFile = "";
   let knowledgeFile = "";
+  let specMode: "created" | "updated" | "unchanged" = "unchanged";
   let testsMode: "created" | "merged" | "unchanged" | "skipped" = "skipped";
   let docsMode: "created" | "appended" | "unchanged" | "skipped" = "skipped";
   let testsMerge: DiscovererMergeReport | undefined;
+
+  const specSaveDir = resolvedTestSavePath || DISCOVERER_SPECS_DIR;
+  const targetSpecFile = path.join(specSaveDir, `${project}.spec.md`);
 
   const targetTestsFile = persistTests
     ? path.join(resolvedTestSavePath || TEST_CASES_DIR, `${project}.json`)
@@ -666,8 +920,16 @@ export async function POST(req: NextRequest) {
     ? resolveKnowledgeFilePath(project, resolvedDocsSavePath || undefined)
     : "";
 
+  const specBeforeContent = readOptionalFileText(targetSpecFile);
   const testsBeforeContent = targetTestsFile ? readOptionalFileText(targetTestsFile) : null;
   const docsBeforeContent = targetDocsFile ? readOptionalFileText(targetDocsFile) : null;
+
+  if (!fs.existsSync(specSaveDir)) {
+    fs.mkdirSync(specSaveDir, { recursive: true });
+  }
+  specFile = targetSpecFile;
+  fs.writeFileSync(specFile, generatedSpec);
+  specMode = specBeforeContent === null ? "created" : specBeforeContent === generatedSpec ? "unchanged" : "updated";
 
   if (persistTests) {
     const resolvedTestDir = resolvedTestSavePath || TEST_CASES_DIR;
@@ -717,6 +979,9 @@ export async function POST(req: NextRequest) {
     generationTarget,
     generationModel,
     generationWarning: generationWarning || undefined,
+    spec: specFile
+      ? { path: specFile, beforeContent: specBeforeContent }
+      : undefined,
     tests: persistTests && testCasesFile
       ? { path: testCasesFile, beforeContent: testsBeforeContent }
       : undefined,
@@ -728,7 +993,9 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     project,
     workspacePath: normalizedWorkspace,
+    sourceUrl,
     testConfig: effectiveTestConfig,
+    spec: generatedSpec,
     agentDocs,
     context: {
       workspaceName: context.workspaceName,
@@ -740,12 +1007,15 @@ export async function POST(req: NextRequest) {
     persisted: {
       tests: persistTests,
       docs: persistDocs,
+      specFile: specFile || undefined,
+      specMode,
       testCasesFile: testCasesFile || undefined,
       knowledgeFile: knowledgeFile || undefined,
       testsMode,
       docsMode,
       testsMerge,
       generationModel,
+      specModel,
       generationWarning: generationWarning || undefined,
       historyId: historyEntry?.id,
     },

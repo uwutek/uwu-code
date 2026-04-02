@@ -12,6 +12,7 @@ interface DiscoverRun {
   target: DiscoverTarget;
   project: string;
   workspacePath: string;
+  sourceUrl?: string;
   persistTests: boolean;
   persistDocs: boolean;
   testSavePath?: string;
@@ -138,6 +139,14 @@ function responseIssue(
   }
 
   const persisted = row.persisted as Record<string, unknown>;
+  const specFile = typeof persisted.specFile === "string" ? persisted.specFile.trim() : "";
+  if (!specFile) {
+    return "Discoverer response missing saved spec path.";
+  }
+  if (!fs.existsSync(specFile)) {
+    return `Saved spec file does not exist on disk: ${specFile}`;
+  }
+
   if (expected.persistTests) {
     const testFile = typeof persisted.testCasesFile === "string" ? persisted.testCasesFile.trim() : "";
     if (!testFile) {
@@ -217,6 +226,7 @@ function refreshMeta(meta: DiscoverRun): DiscoverRun {
 function buildApiPayload(input: {
   workspacePath: string;
   project: string;
+  sourceUrl: string;
   persistTests: boolean;
   persistDocs: boolean;
   generationTarget: "api" | "claude" | "opencode";
@@ -226,6 +236,7 @@ function buildApiPayload(input: {
   const payload: Record<string, unknown> = {
     workspacePath: input.workspacePath,
     project: input.project,
+    sourceUrl: input.sourceUrl,
     persistTests: input.persistTests,
     persistDocs: input.persistDocs,
     generationTarget: input.generationTarget,
@@ -246,6 +257,7 @@ function buildCurlCommand(payload: string): string {
 function buildRunnerCommand(target: DiscoverTarget, input: {
   workspacePath: string;
   project: string;
+  sourceUrl: string;
   persistTests: boolean;
   persistDocs: boolean;
   testSavePath?: string;
@@ -271,6 +283,7 @@ function spawnBackgroundRun(meta: DiscoverRun) {
   const runnerCmd = buildRunnerCommand(meta.target, {
     workspacePath: meta.workspacePath,
     project: meta.project,
+    sourceUrl: meta.sourceUrl ?? "",
     persistTests: meta.persistTests,
     persistDocs: meta.persistDocs,
     testSavePath: meta.testSavePath,
@@ -328,6 +341,7 @@ export async function POST(req: NextRequest) {
   const target = String(body.target ?? "").trim() as DiscoverTarget;
   const workspacePathRaw = String(body.workspacePath ?? "").trim();
   const projectRaw = String(body.project ?? "").trim();
+  const sourceUrl = String(body.sourceUrl ?? "").trim();
   const persistTests = body.persistTests !== false;
   const persistDocs = body.persistDocs !== false;
   const testSavePath = typeof body.testSavePath === "string" ? body.testSavePath.trim() : "";
@@ -335,6 +349,15 @@ export async function POST(req: NextRequest) {
 
   if (target !== "api" && target !== "claude" && target !== "opencode") {
     return NextResponse.json({ error: "Invalid target" }, { status: 400 });
+  }
+
+  try {
+    const parsed = new URL(sourceUrl);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return NextResponse.json({ error: "sourceUrl must be http/https" }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: "sourceUrl is required" }, { status: 400 });
   }
 
   const workspacePath = resolveWorkspacePath(workspacePathRaw);
@@ -358,6 +381,7 @@ export async function POST(req: NextRequest) {
     target,
     project,
     workspacePath,
+    sourceUrl,
     persistTests,
     persistDocs,
     testSavePath: testSavePath || undefined,

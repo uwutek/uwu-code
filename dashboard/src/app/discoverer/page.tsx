@@ -26,12 +26,14 @@ interface DiscovererWorkflow {
 interface DiscovererResponse {
   project: string;
   workspacePath: string;
+  sourceUrl: string;
   testConfig: {
     project: string;
     description: string;
     test_cases: DiscovererCase[];
     workflows: DiscovererWorkflow[];
   };
+  spec: string;
   agentDocs: string;
   context: {
     workspaceName: string;
@@ -43,6 +45,8 @@ interface DiscovererResponse {
   persisted: {
     tests: boolean;
     docs: boolean;
+    specFile?: string;
+    specMode?: "created" | "updated" | "unchanged";
     testCasesFile?: string;
     knowledgeFile?: string;
     testsMode?: "created" | "merged" | "unchanged" | "skipped";
@@ -55,6 +59,7 @@ interface DiscovererResponse {
       reusedWorkflowIds: string[];
     };
     generationModel?: string;
+    specModel?: string;
     generationWarning?: string;
     historyId?: string;
   };
@@ -83,7 +88,7 @@ interface CommitResponse {
 }
 
 interface DiscovererHistoryChange {
-  kind: "tests" | "docs";
+  kind: "tests" | "docs" | "spec";
   path: string;
   existedBefore: boolean;
   existsAfter: boolean;
@@ -124,6 +129,7 @@ interface DiscoverRun {
   target: DiscoverTarget;
   project: string;
   workspacePath: string;
+  sourceUrl?: string;
   persistTests: boolean;
   persistDocs: boolean;
   testSavePath?: string;
@@ -205,6 +211,7 @@ function docsPathFromRun(run: DiscoverRun): string {
 export default function DiscovererPage() {
   const [workspacePath, setWorkspacePath] = useState("");
   const [project, setProject] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
   const [persistTests, setPersistTests] = useState(true);
   const [persistDocs, setPersistDocs] = useState(true);
   const [testSavePath, setTestSavePath] = useState("");
@@ -245,11 +252,11 @@ export default function DiscovererPage() {
   }, [workspacePath]);
 
   const reviewTargets = useMemo(
-    () => [result?.persisted.testCasesFile, result?.persisted.knowledgeFile].filter(Boolean) as string[],
+    () => [result?.persisted.specFile, result?.persisted.testCasesFile, result?.persisted.knowledgeFile].filter(Boolean) as string[],
     [result]
   );
 
-  const canRun = workspacePath.trim().length > 0 && project.trim().length > 0 && !loading;
+  const canRun = workspacePath.trim().length > 0 && project.trim().length > 0 && sourceUrl.trim().length > 0 && !loading;
   const testCaseCount = useMemo(() => result?.testConfig.test_cases.length ?? 0, [result]);
   const visibleRuns = useMemo(
     () => discoverRuns.filter((run) => !dismissedRunIds.includes(run.run_id)),
@@ -318,6 +325,7 @@ export default function DiscovererPage() {
           target,
           workspacePath,
           project,
+          sourceUrl,
           persistTests,
           persistDocs,
           testSavePath: testSavePath || undefined,
@@ -342,6 +350,7 @@ export default function DiscovererPage() {
               target,
               project,
               workspacePath,
+              sourceUrl,
               persistTests,
               persistDocs,
               testSavePath: testSavePath || undefined,
@@ -360,7 +369,7 @@ export default function DiscovererPage() {
     } finally {
       setLoading(false);
     }
-  }, [canRun, workspacePath, project, persistTests, persistDocs, testSavePath, docsSavePath, loadDiscoverRuns]);
+  }, [canRun, workspacePath, project, sourceUrl, persistTests, persistDocs, testSavePath, docsSavePath, loadDiscoverRuns]);
 
   const loadHistory = useCallback(async (slug: string) => {
     if (!slug.trim()) {
@@ -611,7 +620,7 @@ export default function DiscovererPage() {
       )}
 
       <div className="card p-4 space-y-4" style={{ background: "rgba(30,45,74,0.35)", border: "1px solid #1e2d4a", borderRadius: 12 }}>
-        <div className="grid md:grid-cols-2 gap-4">
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
           <div className="space-y-1">
             <span className="text-xs" style={{ color: "#94a3b8" }}>Workspace path</span>
             <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
@@ -637,6 +646,18 @@ export default function DiscovererPage() {
               value={project}
               onChange={(e) => setProject(toSlug(e.target.value))}
               placeholder="my-project"
+              className="w-full px-3 py-2 rounded text-sm"
+              style={{ background: "#0f172a", color: "#e2e8f0", border: "1px solid #1e2d4a" }}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor="discoverer-source-url" className="text-xs" style={{ color: "#94a3b8" }}>Target URL (Playwright spec source)</label>
+            <input
+              id="discoverer-source-url"
+              value={sourceUrl}
+              onChange={(e) => setSourceUrl(e.target.value)}
+              placeholder="https://example.com"
               className="w-full px-3 py-2 rounded text-sm"
               style={{ background: "#0f172a", color: "#e2e8f0", border: "1px solid #1e2d4a" }}
             />
@@ -776,7 +797,14 @@ export default function DiscovererPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            <div className="card p-3 space-y-2" style={{ background: "rgba(30,45,74,0.35)", border: "1px solid #1e2d4a", borderRadius: 10 }}>
+              <div className="text-xs font-semibold" style={{ color: "#7dd3fc" }}>Generated Playwright spec</div>
+              <pre className="text-xs overflow-auto rounded p-3 whitespace-pre-wrap" style={{ background: "#0f172a", color: "#e2e8f0", maxHeight: 420 }}>
+                {result.spec}
+              </pre>
+            </div>
+
             <div className="card p-3 space-y-2" style={{ background: "rgba(30,45,74,0.35)", border: "1px solid #1e2d4a", borderRadius: 10 }}>
               <div className="text-xs font-semibold" style={{ color: "#00d4ff" }}>Generated test config</div>
               <pre className="text-xs overflow-auto rounded p-3" style={{ background: "#0f172a", color: "#e2e8f0", maxHeight: 420 }}>
@@ -793,6 +821,14 @@ export default function DiscovererPage() {
           </div>
 
           <div className="text-xs" style={{ color: "#94a3b8" }}>
+            <div>
+              Source URL: <span className="font-mono" style={{ color: "#e2e8f0" }}>{result.sourceUrl}</span>
+            </div>
+            {result.persisted.specFile && (
+              <div>
+                Saved spec ({result.persisted.specMode ?? "created"}): {result.persisted.specFile}
+              </div>
+            )}
             {result.persisted.testCasesFile && (
               <div>
                 Saved tests ({result.persisted.testsMode ?? "created"}): {result.persisted.testCasesFile}
@@ -810,6 +846,9 @@ export default function DiscovererPage() {
             )}
             {result.persisted.generationModel && (
               <div>Generated with model: {result.persisted.generationModel}</div>
+            )}
+            {result.persisted.specModel && (
+              <div>Spec generated with: {result.persisted.specModel}</div>
             )}
             {result.persisted.generationWarning && (
               <div style={{ color: "#fbbf24" }}>Generation fallback: {result.persisted.generationWarning}</div>
