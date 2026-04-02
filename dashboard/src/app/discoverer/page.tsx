@@ -56,6 +56,7 @@ interface DiscovererResponse {
     };
     generationModel?: string;
     generationWarning?: string;
+    historyId?: string;
   };
 }
 
@@ -79,6 +80,43 @@ interface CommitResponse {
   commit: string;
   summary: string;
   files: string[];
+}
+
+interface DiscovererHistoryChange {
+  kind: "tests" | "docs";
+  path: string;
+  existedBefore: boolean;
+  existsAfter: boolean;
+  changed: boolean;
+  beforeBytes: number;
+  afterBytes: number;
+  beforeHash?: string;
+  afterHash?: string;
+}
+
+interface DiscovererHistoryEntry {
+  id: string;
+  project: string;
+  workspacePath: string;
+  generationTarget: DiscoverTarget;
+  generationModel?: string;
+  generationWarning?: string;
+  createdAt: string;
+  changes: DiscovererHistoryChange[];
+}
+
+interface HistoryListResponse {
+  entries: DiscovererHistoryEntry[];
+  total: number;
+}
+
+interface HistoryRevertResponse {
+  ok: boolean;
+  id: string;
+  restored: string[];
+  missingSnapshots: string[];
+  reviewTargets: string[];
+  entry: DiscovererHistoryEntry;
 }
 
 interface DiscoverRun {
@@ -192,6 +230,12 @@ export default function DiscovererPage() {
   const [commitLoading, setCommitLoading] = useState(false);
   const [commitError, setCommitError] = useState("");
   const [commitSuccess, setCommitSuccess] = useState("");
+
+  const [historyEntries, setHistoryEntries] = useState<DiscovererHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [historyActionMessage, setHistoryActionMessage] = useState("");
+  const [revertingHistoryId, setRevertingHistoryId] = useState("");
 
   useEffect(() => {
     if (!workspacePath) return;
@@ -318,6 +362,30 @@ export default function DiscovererPage() {
     }
   }, [canRun, workspacePath, project, persistTests, persistDocs, testSavePath, docsSavePath, loadDiscoverRuns]);
 
+  const loadHistory = useCallback(async (slug: string) => {
+    if (!slug.trim()) {
+      setHistoryEntries([]);
+      return;
+    }
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const res = await fetch(`/api/discoverer/history?project=${encodeURIComponent(slug)}&limit=30`);
+      const data = (await res.json()) as HistoryListResponse | { error?: string };
+      if (!res.ok) {
+        setHistoryError((data as { error?: string }).error ?? "Failed to load history");
+        setHistoryEntries([]);
+        return;
+      }
+      setHistoryEntries((data as HistoryListResponse).entries ?? []);
+    } catch {
+      setHistoryError("Failed to load history");
+      setHistoryEntries([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
   const loadReview = useCallback(async (files: string[]) => {
     if (files.length === 0) {
       setReview(null);
@@ -346,6 +414,39 @@ export default function DiscovererPage() {
     }
   }, []);
 
+  const revertHistory = useCallback(async (entry: DiscovererHistoryEntry) => {
+    if (!entry?.id || revertingHistoryId) return;
+    const confirmed = confirm(`Revert Discoverer outputs to history entry ${entry.id}?`);
+    if (!confirmed) return;
+
+    setRevertingHistoryId(entry.id);
+    setHistoryActionMessage("");
+    setHistoryError("");
+    try {
+      const res = await fetch("/api/discoverer/history/revert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: entry.id }),
+      });
+      const data = (await res.json()) as HistoryRevertResponse | { error?: string };
+      if (!res.ok) {
+        setHistoryError((data as { error?: string }).error ?? "Failed to revert history entry");
+        return;
+      }
+
+      const reverted = data as HistoryRevertResponse;
+      setHistoryActionMessage(`Reverted ${reverted.restored.length} file(s) from ${entry.id}`);
+      await loadHistory(project);
+      if (Array.isArray(reverted.reviewTargets) && reverted.reviewTargets.length > 0) {
+        await loadReview(reverted.reviewTargets);
+      }
+    } catch {
+      setHistoryError("Failed to revert history entry");
+    } finally {
+      setRevertingHistoryId("");
+    }
+  }, [loadHistory, loadReview, project, revertingHistoryId]);
+
   useEffect(() => {
     if (!result) return;
     if (reviewTargets.length === 0) {
@@ -354,6 +455,12 @@ export default function DiscovererPage() {
     }
     void loadReview(reviewTargets);
   }, [result, reviewTargets, loadReview]);
+
+  useEffect(() => {
+    if (!project.trim()) return;
+    if (!result?.persisted.historyId) return;
+    void loadHistory(project);
+  }, [result?.persisted.historyId, project, loadHistory]);
 
   useEffect(() => {
     if (!project.trim()) {
@@ -371,6 +478,22 @@ export default function DiscovererPage() {
       clearInterval(poll);
     };
   }, [project, loadDiscoverRuns]);
+
+  useEffect(() => {
+    if (!project.trim()) {
+      setHistoryEntries([]);
+      setHistoryError("");
+      return;
+    }
+    void loadHistory(project);
+    const poll = setInterval(() => {
+      void loadHistory(project);
+    }, 10000);
+
+    return () => {
+      clearInterval(poll);
+    };
+  }, [project, loadHistory]);
 
   async function commitReviewedChanges() {
     if (!reviewTargets.length || commitLoading) return;
@@ -691,6 +814,9 @@ export default function DiscovererPage() {
             {result.persisted.generationWarning && (
               <div style={{ color: "#fbbf24" }}>Generation fallback: {result.persisted.generationWarning}</div>
             )}
+            {result.persisted.historyId && (
+              <div>History snapshot: {result.persisted.historyId}</div>
+            )}
           </div>
 
           <div className="card p-4 space-y-3" style={{ background: "rgba(30,45,74,0.35)", border: "1px solid #1e2d4a", borderRadius: 12 }}>
@@ -798,6 +924,111 @@ export default function DiscovererPage() {
                     {commitSuccess}
                   </div>
                 )}
+              </div>
+            )}
+          </div>
+
+          <div className="card p-4 space-y-3" style={{ background: "rgba(30,45,74,0.35)", border: "1px solid #1e2d4a", borderRadius: 12 }}>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-semibold" style={{ color: "#e2e8f0" }}>History</div>
+                <div className="text-xs" style={{ color: "#94a3b8" }}>See what changed in generated files and revert to a previous snapshot.</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadHistory(project)}
+                disabled={historyLoading || !project.trim()}
+                className="px-3 py-1.5 rounded text-xs"
+                style={{
+                  background: "rgba(30,45,74,0.6)",
+                  color: project.trim() ? "#00d4ff" : "#4a5568",
+                  border: "1px solid #1e2d4a",
+                }}
+              >
+                {historyLoading ? "Refreshing..." : "Refresh History"}
+              </button>
+            </div>
+
+            {historyError && (
+              <div className="text-xs px-3 py-2 rounded" style={{ color: "#f87171", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)" }}>
+                {historyError}
+              </div>
+            )}
+
+            {historyActionMessage && (
+              <div className="text-xs px-3 py-2 rounded" style={{ color: "#00ff88", background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.35)" }}>
+                {historyActionMessage}
+              </div>
+            )}
+
+            {historyEntries.length === 0 ? (
+              <div className="text-xs px-3 py-2 rounded" style={{ color: "#94a3b8", background: "rgba(15,23,42,0.7)", border: "1px solid #1e2d4a" }}>
+                {historyLoading ? "Loading history..." : "No history yet for this project."}
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[320px] overflow-auto pr-1">
+                {historyEntries.map((entry) => (
+                  <details
+                    key={entry.id}
+                    className="rounded"
+                    style={{ background: "#0f172a", border: "1px solid #1e2d4a" }}
+                  >
+                    <summary className="px-3 py-2 cursor-pointer list-none flex items-center justify-between gap-2">
+                      <span className="text-xs font-mono" style={{ color: "#e2e8f0" }}>
+                        {entry.id}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded uppercase" style={{ color: targetColor(entry.generationTarget), border: `1px solid ${targetColor(entry.generationTarget)}55` }}>
+                        {entry.generationTarget}
+                      </span>
+                    </summary>
+
+                    <div className="px-3 pb-3 space-y-2 text-xs" style={{ color: "#94a3b8", borderTop: "1px solid #1e2d4a" }}>
+                      <div>
+                        {formatTime(entry.createdAt)} · {entry.workspacePath}
+                      </div>
+                      {entry.generationModel && (
+                        <div>model: <span className="font-mono" style={{ color: "#e2e8f0" }}>{entry.generationModel}</span></div>
+                      )}
+                      {entry.generationWarning && (
+                        <div style={{ color: "#fbbf24" }}>{entry.generationWarning}</div>
+                      )}
+
+                      <div className="space-y-1">
+                        {entry.changes.map((change) => (
+                          <div
+                            key={`${entry.id}-${change.kind}-${change.path}`}
+                            className="rounded px-2 py-1"
+                            style={{ background: "rgba(30,45,74,0.4)", border: "1px solid #1e2d4a" }}
+                          >
+                            <div className="font-mono truncate" style={{ color: "#cbd5e1" }}>{change.path}</div>
+                            <div>
+                              {change.kind} · {change.beforeBytes}B → {change.afterBytes}B · {change.changed ? "changed" : "unchanged"}
+                            </div>
+                            <div className="font-mono" style={{ color: "#64748b" }}>
+                              {change.beforeHash?.slice(0, 8) ?? "none"} → {change.afterHash?.slice(0, 8) ?? "none"}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          onClick={() => void revertHistory(entry)}
+                          disabled={Boolean(revertingHistoryId) && revertingHistoryId !== entry.id}
+                          className="px-3 py-1.5 rounded text-xs font-semibold"
+                          style={{
+                            background: "rgba(168,85,247,0.15)",
+                            color: "#d8b4fe",
+                            border: "1px solid rgba(168,85,247,0.35)",
+                          }}
+                        >
+                          {revertingHistoryId === entry.id ? "Reverting..." : "Revert to this snapshot"}
+                        </button>
+                      </div>
+                    </div>
+                  </details>
+                ))}
               </div>
             )}
           </div>
