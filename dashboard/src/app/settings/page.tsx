@@ -357,6 +357,8 @@ interface ORModel {
   vision: boolean;
 }
 
+const DEFAULT_TESTS_MODEL = "openai/gpt-5.3-codex";
+
 function ModelPicker({
   label,
   value,
@@ -490,7 +492,7 @@ function ModelPicker({
 
 function ModelsSection() {
   const [models, setModels] = useState<ORModel[]>([]);
-  const [testsModel, setTestsModel] = useState("openrouter/free");
+  const [testsModel, setTestsModel] = useState(DEFAULT_TESTS_MODEL);
   const [openclawModel, setOpenclawModel] = useState("openrouter/free");
   const [discovererModel, setDiscovererModel] = useState("openrouter/free");
   const [loading, setLoading] = useState(true);
@@ -538,7 +540,7 @@ function ModelsSection() {
       }
     >
       <p className="text-xs" style={{ color: "#4a5568" }}>
-        Choose which OpenRouter model each feature uses.
+        Choose which model each feature uses.
         {!loading && models.length > 0 && (
           <span> Showing <strong style={{ color: "#00ff88" }}>{freeCount} free</strong> and <strong style={{ color: "#94a3b8" }}>{models.length - freeCount} paid</strong> models.</span>
         )}

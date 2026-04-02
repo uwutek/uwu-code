@@ -3,6 +3,8 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { checkAuth, readSettings, writeSettings, readEnvKeys } from "@/app/lib/settings";
 
+const DEFAULT_TESTS_MODEL = "openai/gpt-5.3-codex";
+
 export interface ORModel {
   id: string;
   name: string;
@@ -77,7 +79,7 @@ export async function GET(_req: NextRequest) {
   return NextResponse.json({
     models,
     selected: {
-      tests: settings.models?.tests ?? "openrouter/free",
+      tests: settings.models?.tests ?? DEFAULT_TESTS_MODEL,
       openclaw: settings.models?.openclaw ?? "openrouter/free",
       discoverer: settings.models?.discoverer ?? "openrouter/free",
     },
@@ -93,7 +95,7 @@ export async function POST(req: NextRequest) {
   writeSettings({
     ...settings,
     models: {
-      tests: tests ?? settings.models?.tests ?? "openrouter/free",
+      tests: tests ?? settings.models?.tests ?? DEFAULT_TESTS_MODEL,
       openclaw: openclaw ?? settings.models?.openclaw ?? "openrouter/free",
       discoverer: discoverer ?? settings.models?.discoverer ?? "openrouter/free",
     },

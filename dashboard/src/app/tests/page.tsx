@@ -8,6 +8,8 @@ type McpTarget = "claude" | "opencode" | "api";
 
 type RunSelectionMode = "all" | "workflows" | "cases";
 
+const DEFAULT_TESTS_MODEL = "openai/gpt-5.3-codex";
+
 function McpModal({
   target,
   project,
@@ -86,7 +88,7 @@ function McpModal({
   // Must cd /home/uwu so Claude uses the project scope where the MCP server is registered.
   // Run as uwu (non-root) so --dangerously-skip-permissions is accepted.
   const claudeCmd = `sudo -u uwu bash -c 'cd /home/uwu && claude --dangerously-skip-permissions -p "${claudePrompt}"'`;
-  const opencodeCmd = `sudo -u uwu opencode run --dir ${dir} "${opencodePrompt}"`;
+  const opencodeCmd = `sudo -u uwu opencode run --dir ${dir} --model ${DEFAULT_TESTS_MODEL} "${opencodePrompt}"`;
 
   const isClaudeCode = target === "claude";
   const isApi = target === "api";
