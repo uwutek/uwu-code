@@ -91,7 +91,7 @@ function WindowRow({
         border: `1px solid ${window.active ? "rgba(0, 255, 136, 0.15)" : "rgba(30, 45, 74, 0.4)"}`,
       }}
     >
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           {/* Window index */}
           <span
@@ -137,7 +137,7 @@ function WindowRow({
 
         {/* PID */}
         {window.panePid && (
-          <span className="text-xs flex-shrink-0" style={{ color: "#4a5568" }}>
+          <span className="text-xs flex-shrink-0 pl-7 sm:pl-0" style={{ color: "#4a5568" }}>
             pid:{window.panePid}
           </span>
         )}
@@ -326,7 +326,7 @@ function SessionCard({
           </span>
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-wrap justify-end flex-shrink-0">
           {/* Port count badge */}
           {sessionPorts.length > 0 && (
             <span
@@ -483,7 +483,7 @@ export default function SessionsPanel({ sessions, ports, loading, onRefresh, onE
   return (
     <div className="flex flex-col gap-4">
       {/* Panel header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <svg
             className="w-4 h-4"
@@ -521,7 +521,7 @@ export default function SessionsPanel({ sessions, ports, loading, onRefresh, onE
         className="card p-3 space-y-2"
         style={{ border: "1px solid rgba(0,212,255,0.25)", background: "rgba(30,45,74,0.25)" }}
       >
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#00d4ff" }}>
             Exposed Ports
           </div>
@@ -548,10 +548,10 @@ export default function SessionsPanel({ sessions, ports, loading, onRefresh, onE
               return (
                 <div
                   key={item.port}
-                  className="flex items-center justify-between gap-2 rounded px-2 py-1.5"
+                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded px-2 py-1.5"
                   style={{ background: "rgba(15,23,42,0.75)", border: "1px solid #1e2d4a" }}
                 >
-                  <div className="min-w-0 flex items-center gap-2">
+                  <div className="min-w-0 flex items-center gap-2 flex-wrap">
                     <span className="badge" style={{ background: "rgba(0,212,255,0.12)", color: "#00d4ff", border: "1px solid rgba(0,212,255,0.3)" }}>
                       :{item.port}
                     </span>

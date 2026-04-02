@@ -89,6 +89,7 @@ function CloneForm({ onClose, onCloned }: CloneFormProps) {
           Clone Repository
         </span>
         <button
+          type="button"
           onClick={onClose}
           className="text-xs"
           style={{ color: "#4a5568" }}
@@ -119,13 +120,13 @@ function CloneForm({ onClose, onCloned }: CloneFormProps) {
         }
       />
 
-      <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row gap-2">
         <input
           type="text"
           placeholder="Destination folder (optional)"
           value={dest}
           onChange={(e) => setDest(e.target.value)}
-          className="flex-1 px-3 py-1.5 rounded text-xs outline-none"
+          className="flex-1 w-full px-3 py-1.5 rounded text-xs outline-none"
           style={{
             background: "rgba(10, 14, 26, 0.8)",
             border: "1px solid rgba(30, 45, 74, 0.8)",
@@ -139,6 +140,7 @@ function CloneForm({ onClose, onCloned }: CloneFormProps) {
           }
         />
         <button
+          type="button"
           onClick={handleClone}
           disabled={loading}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-all flex-shrink-0"
@@ -215,8 +217,8 @@ export default function ProjectsPanel({ data, onRefresh }: Props) {
   return (
     <div className="flex flex-col gap-4">
       {/* Panel header */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <svg
             className="w-4 h-4"
             style={{ color: "#ffd700" }}
@@ -247,9 +249,10 @@ export default function ProjectsPanel({ data, onRefresh }: Props) {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           {/* Clone button */}
           <button
+            type="button"
             onClick={() => setShowCloneForm((v) => !v)}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all"
             style={{
@@ -281,6 +284,7 @@ export default function ProjectsPanel({ data, onRefresh }: Props) {
 
           {/* Collapse toggle */}
           <button
+            type="button"
             onClick={() => setCollapsed((v) => !v)}
             className="flex items-center justify-center w-6 h-6 rounded transition-colors"
             style={{
@@ -378,6 +382,7 @@ function GroupSection({
     <div className="card overflow-hidden">
       {/* Group header */}
       <button
+        type="button"
         className="w-full flex items-center justify-between px-4 py-3 text-left transition-colors hover:bg-white/5"
         onClick={() => setExpanded((v) => !v)}
       >
@@ -423,9 +428,9 @@ function GroupSection({
             {group.projects.length}
           </span>
         </div>
-        <span className="text-xs font-mono" style={{ color: "#2e4a7a" }}>
-          {group.path}
-        </span>
+          <span className="text-xs font-mono hidden md:inline" style={{ color: "#2e4a7a" }}>
+            {group.path}
+          </span>
       </button>
 
       {expanded && (
@@ -457,7 +462,7 @@ function ProjectRow({
 
   return (
     <div
-      className="flex items-center justify-between gap-3 px-3 py-2.5 rounded"
+      className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-3 py-2.5 rounded"
       style={{
         background: "rgba(30, 45, 74, 0.3)",
         border: "1px solid rgba(30, 45, 74, 0.5)",
@@ -514,7 +519,7 @@ function ProjectRow({
         </span>
       </div>
 
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex items-center gap-2 flex-wrap sm:justify-end">
         {/* Open Terminal button */}
         <a
           href={terminalUrl}
