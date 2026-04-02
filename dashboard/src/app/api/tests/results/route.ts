@@ -238,6 +238,35 @@ function parseCaseResultsFromAgentText(meta: AgentRunMeta, resultsDir: string): 
     });
   }
 
+  const jsonBlockPattern = /\{[\s\S]{0,2400}?"case_id"\s*:\s*"([a-zA-Z0-9_-]+)"[\s\S]{0,2400}?"status"\s*:\s*"(PASS|PASSED|SUCCESS|OK|FAIL|FAILED|ERROR|SKIP|SKIPPED)"[\s\S]{0,2400}?\}/gi;
+  let jsonMatch = jsonBlockPattern.exec(source);
+  while (jsonMatch) {
+    const block = jsonMatch[0];
+    const caseId = jsonMatch[1];
+    const status = parseStatus(jsonMatch[2]);
+
+    const recordingMatch = block.match(/"recording"\s*:\s*(null|"([^"]+)")/i);
+    const recordingRaw = recordingMatch?.[1] === "null" ? undefined : recordingMatch?.[2];
+    const recording = normalizeRecordingPath(recordingRaw, resultsDir);
+
+    const browserErrorsMatch = block.match(/"browser_errors"\s*:\s*\[([\s\S]*?)\]/i);
+    const hasBrowserErrors = !!browserErrorsMatch && browserErrorsMatch[1].trim().length > 0;
+
+    byCase.set(caseId, {
+      id: `${meta.run_id}-${caseId}-json-report`,
+      label: caseId,
+      passed: hasBrowserErrors ? false : status.passed,
+      skipped: hasBrowserErrors ? false : status.skipped,
+      detail: hasBrowserErrors
+        ? "Recovered from agent JSON report; browser_errors were present."
+        : "Recovered from agent JSON report because save_results output was missing.",
+      duration_s: 0,
+      recording,
+    });
+
+    jsonMatch = jsonBlockPattern.exec(source);
+  }
+
   return Array.from(byCase.values());
 }
 
