@@ -62,6 +62,16 @@ function parseStringArray(value: unknown): string[] {
     .filter((item) => item.length > 0);
 }
 
+function hasBrowserErrorsInDetail(detail: string): boolean {
+  if (!detail) return false;
+  try {
+    const parsed = JSON.parse(detail) as { browser_errors?: unknown };
+    return Array.isArray(parsed.browser_errors) && parsed.browser_errors.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function asRunResult(value: unknown, defaultProject: string, resultsDir: string): RunResult | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
@@ -80,15 +90,19 @@ function asRunResult(value: unknown, defaultProject: string, resultsDir: string)
         ? JSON.stringify(raw.detail)
         : "";
 
+      const statusPassed = typeof item.passed === "boolean"
+        ? item.passed
+        : statusStr === "PASS" || statusStr === "PASSED" || statusStr === "SUCCESS" || statusStr === "OK";
+      const statusSkipped = typeof item.skipped === "boolean"
+        ? item.skipped
+        : statusStr === "SKIP" || statusStr === "SKIPPED";
+      const hasBrowserErrors = hasBrowserErrorsInDetail(detailValue);
+
       return {
         id: item.id ?? (caseId ? `${row.run_id}-${caseId}` : item.id),
         label: item.label ?? caseId ?? "",
-        passed: typeof item.passed === "boolean"
-          ? item.passed
-          : statusStr === "PASS" || statusStr === "PASSED" || statusStr === "SUCCESS" || statusStr === "OK",
-        skipped: typeof item.skipped === "boolean"
-          ? item.skipped
-          : statusStr === "SKIP" || statusStr === "SKIPPED",
+        passed: hasBrowserErrors ? false : statusPassed,
+        skipped: hasBrowserErrors ? false : statusSkipped,
         detail: detailValue,
         duration_s: typeof item.duration_s === "number" ? item.duration_s : 0,
         recording:
