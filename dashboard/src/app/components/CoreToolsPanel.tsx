@@ -133,11 +133,11 @@ export default function CoreToolsPanel({
       {expanded && (
         <div className="px-4 pb-4 space-y-4">
           <div>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
               <h3 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "#4a5568" }}>
                 Listening Ports
               </h3>
-              <div className="relative">
+              <div className="relative w-full sm:w-auto">
                 <svg
                   className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3"
                   style={{ color: "#4a5568" }}
@@ -159,7 +159,8 @@ export default function CoreToolsPanel({
                     background: "rgba(30, 45, 74, 0.5)",
                     border: "1px solid rgba(30, 45, 74, 0.8)",
                     color: "#e2e8f0",
-                    width: "120px",
+                    width: "100%",
+                    maxWidth: "160px",
                     transitionProperty: "width",
                     transitionDuration: "200ms",
                   }}
@@ -193,8 +194,8 @@ export default function CoreToolsPanel({
                         Process <SortIndicator k="processName" />
                       </button>
                     </th>
-                    <th>PID</th>
-                    <th>
+                    <th className="hidden sm:table-cell">PID</th>
+                    <th className="hidden md:table-cell">
                       <button
                         type="button"
                         className="flex items-center gap-1 hover:text-purple-400 transition-colors"
@@ -225,12 +226,12 @@ export default function CoreToolsPanel({
                           {p.processName}
                         </span>
                       </td>
-                      <td>
+                      <td className="hidden sm:table-cell">
                         <span className="font-mono text-xs" style={{ color: "#94a3b8" }}>
                           {p.pid ?? "—"}
                         </span>
                       </td>
-                      <td>
+                      <td className="hidden md:table-cell">
                         {p.matchedSession ? (
                           <span
                             className="badge"

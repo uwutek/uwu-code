@@ -146,7 +146,7 @@ export default function PortsPanel({
             Listening Ports
           </h2>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <span
             className="badge"
             style={{
@@ -159,7 +159,7 @@ export default function PortsPanel({
           </span>
           {/* Filter input — only shown when expanded */}
           {!collapsed && (
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <svg
                 className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3"
                 style={{ color: "#4a5568" }}
@@ -176,7 +176,7 @@ export default function PortsPanel({
                 placeholder="Filter..."
                 value={filterText}
                 onChange={(e) => setFilterText(e.target.value)}
-                className="pl-7 pr-3 py-1 rounded text-xs outline-none transition-colors w-28 focus:w-40"
+                className="pl-7 pr-3 py-1 rounded text-xs outline-none transition-colors w-full sm:w-28 sm:focus:w-40"
                 style={{
                   background: "rgba(30, 45, 74, 0.5)",
                   border: "1px solid rgba(30, 45, 74, 0.8)",
@@ -195,6 +195,7 @@ export default function PortsPanel({
           )}
           {/* Collapse / expand toggle */}
           <button
+            type="button"
             onClick={() => setCollapsed((v) => !v)}
             className="flex items-center justify-center w-6 h-6 rounded transition-colors"
             style={{
@@ -259,6 +260,7 @@ export default function PortsPanel({
                 <tr>
                   <th>
                     <button
+                      type="button"
                       className="flex items-center gap-1 hover:text-cyan-400 transition-colors"
                       onClick={() => handleSort("port")}
                       style={{ color: sortKey === "port" ? "#00d4ff" : undefined }}
@@ -268,6 +270,7 @@ export default function PortsPanel({
                   </th>
                   <th>
                     <button
+                      type="button"
                       className="flex items-center gap-1 hover:text-cyan-400 transition-colors"
                       onClick={() => handleSort("processName")}
                       style={{ color: sortKey === "processName" ? "#00d4ff" : undefined }}
@@ -275,9 +278,10 @@ export default function PortsPanel({
                       Process <SortIndicator k="processName" />
                     </button>
                   </th>
-                  <th>PID</th>
-                  <th>
+                  <th className="hidden sm:table-cell">PID</th>
+                  <th className="hidden md:table-cell">
                     <button
+                      type="button"
                       className="flex items-center gap-1 hover:text-cyan-400 transition-colors"
                       onClick={() => handleSort("matchedSession")}
                       style={{ color: sortKey === "matchedSession" ? "#00d4ff" : undefined }}
@@ -320,7 +324,7 @@ function PortRow({
   return (
     <tr>
       {/* Port */}
-      <td>
+      <td className="hidden sm:table-cell">
         <div className="flex items-center flex-wrap gap-1">
           <span
             className="font-mono font-semibold"
@@ -333,7 +337,7 @@ function PortRow({
       </td>
 
       {/* Process */}
-      <td>
+      <td className="hidden md:table-cell">
         <div className="flex items-center gap-1.5">
           <svg
             className="w-3 h-3 flex-shrink-0"
@@ -400,6 +404,7 @@ function PortRow({
       {/* Action */}
       <td>
         <button
+          type="button"
           onClick={() => onExpose(port)}
           className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all"
           style={{
