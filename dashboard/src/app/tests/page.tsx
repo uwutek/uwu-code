@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FolderTreePicker from "@/app/components/FolderTreePicker";
 
 // ─── MCP Modal ────────────────────────────────────────────────────────────────
@@ -1667,12 +1667,22 @@ export default function TestsPage() {
   const dbDiscoveryConnectionValid =
     !!dbConnection.host.trim() &&
     !!dbConnection.username.trim() &&
-    !!dbConnection.password &&
+    !!dbConnection.password.trim() &&
     Number(dbConnection.port) > 0;
 
   const dbConnectionValid =
     dbDiscoveryConnectionValid &&
     !!dbConnection.database.trim();
+
+  const filteredSpecFiles = useMemo(
+    () => specFiles.filter((file) => {
+      if (specFolderPath.trim() && !file.startsWith(specFolderPath.trim())) return false;
+      if (!specSearch.trim()) return true;
+      const q = specSearch.trim().toLowerCase();
+      return file.toLowerCase().includes(q);
+    }),
+    [specFiles, specFolderPath, specSearch]
+  );
 
   const buildDbConnectionPayload = useCallback(() => ({
     dbType: dbConnection.dbType,
@@ -2169,13 +2179,7 @@ export default function TestsPage() {
                     placeholder="Filter discovered spec files..."
                   />
                   <div className="max-h-36 overflow-y-auto rounded p-2 space-y-1" style={{ background: "rgba(2,6,23,0.4)", border: "1px solid rgba(30,45,74,0.6)" }}>
-                    {specFiles
-                      .filter((file) => {
-                        if (specFolderPath.trim() && !file.startsWith(specFolderPath.trim())) return false;
-                        if (!specSearch.trim()) return true;
-                        const q = specSearch.trim().toLowerCase();
-                        return file.toLowerCase().includes(q);
-                      })
+                    {filteredSpecFiles
                       .map((file) => (
                         <button
                           key={file}
@@ -2195,6 +2199,11 @@ export default function TestsPage() {
                     {!specFilesLoading && specFiles.length === 0 && (
                       <div className="text-xs" style={{ color: "#64748b" }}>
                         No `.spec.ts` or `.spec.py` files found. Generate one via Discoverer first.
+                      </div>
+                    )}
+                    {!specFilesLoading && specFiles.length > 0 && filteredSpecFiles.length === 0 && (
+                      <div className="text-xs" style={{ color: "#64748b" }}>
+                        No discovered spec files match the current folder/search filter.
                       </div>
                     )}
                   </div>

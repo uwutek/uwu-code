@@ -56,7 +56,8 @@ function parseConnection(raw: unknown, options: ParseConnectionOptions = {}): Db
   const databaseRaw = String(input.database ?? "").trim();
   const database = databaseRaw || "postgres";
   const username = String(input.username ?? "").trim();
-  const password = String(input.password ?? "");
+  const passwordRaw = String(input.password ?? "");
+  const password = passwordRaw.trim();
   const portRaw = Number(input.port ?? 5432);
   const port = Number.isFinite(portRaw) ? Math.floor(portRaw) : NaN;
 
@@ -72,7 +73,7 @@ function parseConnection(raw: unknown, options: ParseConnectionOptions = {}): Db
     port,
     database,
     username,
-    password,
+    password: passwordRaw,
   };
 }
 
