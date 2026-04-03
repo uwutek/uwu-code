@@ -214,11 +214,36 @@ function specPathFromRun(run: DiscoverRun): string {
   return run.specSavePath ?? "";
 }
 
+const DISCOVERER_FORM_STORAGE_KEY = "discovererFormState";
+
+interface PersistedFormState {
+  workspacePath: string;
+  project: string;
+  sourceUrl: string;
+  specSavePath: string;
+}
+
+function loadPersistedForm(): PersistedFormState {
+  try {
+    const raw = localStorage.getItem(DISCOVERER_FORM_STORAGE_KEY);
+    if (!raw) return { workspacePath: "", project: "", sourceUrl: "", specSavePath: "" };
+    const parsed = JSON.parse(raw) as Partial<PersistedFormState>;
+    return {
+      workspacePath: typeof parsed.workspacePath === "string" ? parsed.workspacePath : "",
+      project: typeof parsed.project === "string" ? parsed.project : "",
+      sourceUrl: typeof parsed.sourceUrl === "string" ? parsed.sourceUrl : "",
+      specSavePath: typeof parsed.specSavePath === "string" ? parsed.specSavePath : "",
+    };
+  } catch {
+    return { workspacePath: "", project: "", sourceUrl: "", specSavePath: "" };
+  }
+}
+
 export default function DiscovererPage() {
-  const [workspacePath, setWorkspacePath] = useState("");
-  const [project, setProject] = useState("");
-  const [sourceUrl, setSourceUrl] = useState("");
-  const [specSavePath, setSpecSavePath] = useState("");
+  const [workspacePath, setWorkspacePath] = useState(() => loadPersistedForm().workspacePath);
+  const [project, setProject] = useState(() => loadPersistedForm().project);
+  const [sourceUrl, setSourceUrl] = useState(() => loadPersistedForm().sourceUrl);
+  const [specSavePath, setSpecSavePath] = useState(() => loadPersistedForm().specSavePath);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<DiscovererResponse | null>(null);
@@ -231,6 +256,16 @@ export default function DiscovererPage() {
     }
   });
   const runStatusRef = useRef<Record<string, DiscoverRunStatus>>({});
+
+  // Persist form state to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      const state: PersistedFormState = { workspacePath, project, sourceUrl, specSavePath };
+      localStorage.setItem(DISCOVERER_FORM_STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      // localStorage unavailable — ignore
+    }
+  }, [workspacePath, project, sourceUrl, specSavePath]);
 
   const [review, setReview] = useState<ReviewResponse | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);

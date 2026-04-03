@@ -123,6 +123,11 @@ function TreeItem({
         >
           {node.name}
         </span>
+        {!node.hasChildren && (
+          <span className="text-[10px] ml-1 flex-shrink-0" style={{ color: "#4a5568" }}>
+            (empty)
+          </span>
+        )}
       </button>
 
       {node.expanded && node.children && (
@@ -162,7 +167,9 @@ export default function FolderTreePicker({
   const [nodes, setNodes] = useState<TreeNode[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [openAbove, setOpenAbove] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   const loadRoot = useCallback(async () => {
     setLoading(true);
@@ -189,6 +196,11 @@ export default function FolderTreePicker({
   useEffect(() => {
     if (open && nodes.length === 0 && !loading) {
       void loadRoot();
+    }
+    if (open && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setOpenAbove(spaceBelow < 340);
     }
   }, [open, nodes.length, loading, loadRoot]);
 
@@ -288,6 +300,7 @@ export default function FolderTreePicker({
     <div className="relative" ref={popoverRef}>
       <button
         type="button"
+        ref={triggerRef}
         onClick={() => setOpen((prev) => !prev)}
         className={`flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors w-full ${compact ? "sm:max-w-[260px]" : "sm:max-w-[360px]"}`}
         style={{
@@ -325,7 +338,7 @@ export default function FolderTreePicker({
 
       {open && (
         <div
-          className="absolute right-0 top-full mt-1 z-50 w-[min(20rem,calc(100vw-2rem))] sm:w-80 rounded-lg overflow-hidden shadow-2xl"
+          className={`absolute right-0 z-50 w-[min(20rem,calc(100vw-2rem))] sm:w-80 rounded-lg overflow-hidden shadow-2xl ${openAbove ? "bottom-full mb-1" : "top-full mt-1"}`}
           style={{
             background: "#0f1629",
             border: "1px solid #1e2d4a",

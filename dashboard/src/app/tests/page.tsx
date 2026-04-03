@@ -2351,7 +2351,7 @@ export default function TestsPage() {
                       style={INPUT_STYLE}
                       value={dbConnection.username}
                       onChange={(e) => setDbConnection((prev) => ({ ...prev, username: e.target.value }))}
-                      placeholder="Username (manual override)"
+                      placeholder="Username (e.g. postgres)"
                     />
                     <input
                       type="password"
@@ -2359,7 +2359,7 @@ export default function TestsPage() {
                       style={INPUT_STYLE}
                       value={dbConnection.password}
                       onChange={(e) => setDbConnection((prev) => ({ ...prev, password: e.target.value }))}
-                      placeholder="Password"
+                      placeholder="DB password"
                     />
                   </div>
 
