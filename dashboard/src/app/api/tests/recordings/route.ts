@@ -12,7 +12,7 @@ const RESULTS_DIR = path.join(process.cwd(), "..", "regression_tests", "results"
  */
 function findBestRecordingInDir(dir: string): string | null {
   if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return null;
-  const validExts = [".webm", ".mp4"];
+  const validExts = [".webm", ".mp4", ".zip"];
   const candidates = fs.readdirSync(dir)
     .filter((f) => validExts.includes(path.extname(f).toLowerCase()))
     .map((f) => {
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
   const file = rawFile?.startsWith("results/") ? rawFile.slice("results/".length) : rawFile;
 
   // Validate: only allow paths within RESULTS_DIR, no traversal
-  if (!file || file.includes("..") || !file.match(/^[a-zA-Z0-9_\-/]+\.(webm|mp4)$/)) {
+  if (!file || file.includes("..") || !file.match(/^[a-zA-Z0-9_\-/]+\.(webm|mp4|zip)$/)) {
     return NextResponse.json({ error: "Invalid file path" }, { status: 400 });
   }
 
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
 
   const stat = fs.statSync(filePath);
   const ext = path.extname(filePath).toLowerCase();
-  const contentType = ext === ".mp4" ? "video/mp4" : "video/webm";
+  const contentType = ext === ".mp4" ? "video/mp4" : ext === ".webm" ? "video/webm" : "application/zip";
 
   const stream = fs.createReadStream(filePath);
   return new NextResponse(stream as unknown as ReadableStream, {

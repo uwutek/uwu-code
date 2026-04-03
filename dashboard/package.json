@@ -12,7 +12,9 @@
     "next": "14.2.5",
     "pg": "^8.20.0",
     "react": "^18",
-    "react-dom": "^18"
+    "react-dom": "^18",
+    "@playwright/test": "^1.44.1",
+    "playwright": "^1.44.1"
   },
   "devDependencies": {
     "@types/node": "^20",

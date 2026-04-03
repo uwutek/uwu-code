@@ -42,10 +42,92 @@ function listRecordings(rootDir: string): string[] {
       }
       if (!entry.isFile()) continue;
       const ext = path.extname(entry.name).toLowerCase();
-      if (ext === ".webm" || ext === ".mp4") files.push(abs);
+      if (ext === ".webm" || ext === ".mp4" || ext === ".zip") files.push(abs);
     }
   }
   return files;
+}
+
+function pickPrimaryRecording(paths: string[]): string | null {
+  if (paths.length === 0) return null;
+  const video = paths.find((entry) => entry.toLowerCase().endsWith(".webm") || entry.toLowerCase().endsWith(".mp4"));
+  return video ?? paths[0] ?? null;
+}
+
+function sortRecordingsPreferred(paths: string[]): string[] {
+  const weight = (entry: string): number => {
+    const lowered = entry.toLowerCase();
+    if (lowered.endsWith(".webm")) return 0;
+    if (lowered.endsWith(".mp4")) return 1;
+    if (lowered.endsWith(".zip")) return 2;
+    return 3;
+  };
+  return [...paths].sort((a, b) => {
+    const delta = weight(a) - weight(b);
+    if (delta !== 0) return delta;
+    return a.localeCompare(b);
+  });
+}
+
+function loadProjectEnvVars(envFile: string): Record<string, string> {
+  if (!fs.existsSync(envFile)) return {};
+  try {
+    const raw = JSON.parse(fs.readFileSync(envFile, "utf-8")) as Record<string, unknown>;
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (typeof key !== "string") continue;
+      if (typeof value === "string") out[key] = value;
+      else if (typeof value === "number" || typeof value === "boolean") out[key] = String(value);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+async function readOtpFromMcp(project: string, regressionDir: string, testCasesDir: string): Promise<string> {
+  const script = [
+    "import json, os, sys",
+    "project = sys.argv[1]",
+    "regression_dir = sys.argv[2]",
+    "test_cases_dir = sys.argv[3]",
+    "sys.path.insert(0, regression_dir)",
+    "os.environ['UWU_TEST_CASES_DIR'] = test_cases_dir",
+    "try:",
+    "    import mcp_server",
+    "    print(mcp_server.tool_get_otp(project))",
+    "except Exception as e:",
+    "    print(json.dumps({'otp':'','source':'','error':str(e)}))",
+  ].join("\n");
+
+  const result = await new Promise<{ stdout: string; stderr: string }>((resolve) => {
+    execFile(
+      "python3",
+      ["-c", script, project, regressionDir, testCasesDir],
+      {
+        timeout: 25_000,
+        maxBuffer: 2 * 1024 * 1024,
+        env: {
+          ...process.env,
+          UWU_TEST_CASES_DIR: testCasesDir,
+        },
+      },
+      (_error, stdout, stderr) => {
+        resolve({ stdout: stdout ?? "", stderr: stderr ?? "" });
+      }
+    );
+  });
+
+  const raw = `${result.stdout}\n${result.stderr}`.trim();
+  if (!raw) return "";
+  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(lines[i]) as { otp?: unknown };
+      if (typeof parsed.otp === "string") return parsed.otp.trim();
+    } catch {}
+  }
+  return "";
 }
 
 function extractStructuredSummary(raw: string): { passed?: boolean; summary?: string } | null {
@@ -89,7 +171,7 @@ export async function POST(req: NextRequest) {
   const requestedUrl = typeof parsed.targetUrl === "string" ? parsed.targetUrl.trim() : "";
 
   const projectPaths = getReadableProjectPaths(project);
-  const defaultSpecPath = path.join(projectPaths.regressionDir, "specs", `${project}.spec.py`);
+  const defaultSpecPath = path.join(projectPaths.regressionDir, "specs", `${project}.spec.ts`);
   const specPath = requestedSpecPath || defaultSpecPath;
   const resolvedSpecPath = path.resolve(specPath);
 
@@ -109,8 +191,23 @@ export async function POST(req: NextRequest) {
   fs.mkdirSync(recordingsDir, { recursive: true });
   fs.mkdirSync(specRunDir, { recursive: true });
 
-  const uvBin = findUv();
-  const cwd = projectPaths.workspacePath || projectPaths.regressionDir;
+  const dashboardRoot = process.cwd();
+  const workspaceCwd = projectPaths.workspacePath || projectPaths.regressionDir;
+  let effectiveCwd = workspaceCwd;
+  const playwrightBin = path.join(dashboardRoot, "node_modules", ".bin", "playwright");
+  const projectEnv = loadProjectEnvVars(projectPaths.envFile);
+  const otpFromMcp = await readOtpFromMcp(project, projectPaths.regressionDir, projectPaths.testCasesDir);
+  const baseExecEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...projectEnv,
+    PATH: `${process.env.PATH ?? ""}:/usr/local/bin:/root/.local/bin:/root/.cargo/bin`,
+    UWU_SPEC_RECORDING_DIR: recordingsDir,
+    UWU_SPEC_TARGET_URL: requestedUrl,
+    UWU_SPEC_RUN_ID: runId,
+  };
+  if (otpFromMcp) {
+    baseExecEnv.UWU_SPEC_OTP = otpFromMcp;
+  }
 
   const runResult = await new Promise<{
     code: number;
@@ -120,37 +217,89 @@ export async function POST(req: NextRequest) {
     durationS: number;
   }>((resolve) => {
     const started = Date.now();
-    execFile(
-      uvBin,
-      ["run", "python", resolvedSpecPath],
-      {
-        cwd,
-        timeout: 15 * 60_000,
-        maxBuffer: 30 * 1024 * 1024,
-        env: {
-          ...process.env,
-          PATH: `${process.env.PATH ?? ""}:/usr/local/bin:/root/.local/bin:/root/.cargo/bin`,
-          UWU_SPEC_RECORDING_DIR: recordingsDir,
-          UWU_SPEC_TARGET_URL: requestedUrl,
-          UWU_SPEC_RUN_ID: runId,
+    const isTs = resolvedSpecPath.endsWith(".ts") || resolvedSpecPath.endsWith(".tsx");
+    if (isTs) {
+      effectiveCwd = path.dirname(resolvedSpecPath);
+      const tsConfigFile = path.join(specRunDir, "playwright.spec-run.config.cjs");
+      fs.writeFileSync(
+        tsConfigFile,
+        [
+          "module.exports = {",
+          `  testDir: ${JSON.stringify(path.dirname(resolvedSpecPath))},`,
+          "  use: {",
+          "    trace: 'on',",
+          "    video: 'on',",
+          "  },",
+          "};",
+          "",
+        ].join("\n")
+      );
+      execFile(
+        playwrightBin,
+        [
+          "test",
+          resolvedSpecPath,
+          "--config",
+          tsConfigFile,
+          "--reporter",
+          "list",
+          "--output",
+          recordingsDir,
+        ],
+        {
+          cwd: effectiveCwd,
+          timeout: 15 * 60_000,
+          maxBuffer: 30 * 1024 * 1024,
+          env: {
+            ...baseExecEnv,
+            NODE_PATH: path.join(dashboardRoot, "node_modules"),
+          },
         },
-      },
-      (error, stdout, stderr) => {
-        const durationS = Math.max(0, (Date.now() - started) / 1000);
-        let code = 0;
-        if (error) {
-          const errCode = (error as NodeJS.ErrnoException).code;
-          code = typeof errCode === "number" ? errCode : 1;
+        (error, stdout, stderr) => {
+          const durationS = Math.max(0, (Date.now() - started) / 1000);
+          let code = 0;
+          if (error) {
+            const errCode = (error as NodeJS.ErrnoException).code;
+            code = typeof errCode === "number" ? errCode : 1;
+          }
+          resolve({
+            code,
+            stdout: stdout ?? "",
+            stderr: stderr ?? "",
+            errorMessage: error ? String((error as Error).message ?? "") : undefined,
+            durationS,
+          });
         }
-        resolve({
-          code,
-          stdout: stdout ?? "",
-          stderr: stderr ?? "",
-          errorMessage: error ? String((error as Error).message ?? "") : undefined,
-          durationS,
-        });
-      }
-    );
+      );
+    } else {
+      effectiveCwd = workspaceCwd;
+      const uvBin = findUv();
+      execFile(
+        uvBin,
+        ["run", "python", resolvedSpecPath],
+        {
+          cwd: workspaceCwd,
+          timeout: 15 * 60_000,
+          maxBuffer: 30 * 1024 * 1024,
+          env: baseExecEnv,
+        },
+        (error, stdout, stderr) => {
+          const durationS = Math.max(0, (Date.now() - started) / 1000);
+          let code = 0;
+          if (error) {
+            const errCode = (error as NodeJS.ErrnoException).code;
+            code = typeof errCode === "number" ? errCode : 1;
+          }
+          resolve({
+            code,
+            stdout: stdout ?? "",
+            stderr: stderr ?? "",
+            errorMessage: error ? String((error as Error).message ?? "") : undefined,
+            durationS,
+          });
+        }
+      );
+    }
   });
 
   const completedAtIso = new Date().toISOString();
@@ -162,10 +311,10 @@ export async function POST(req: NextRequest) {
       ? "Spec execution completed successfully"
       : (runResult.stderr.trim() || runResult.errorMessage || "Spec execution failed"));
 
-  const recordings = listRecordings(recordingsDir).map((abs) => {
+  const recordings = sortRecordingsPreferred(listRecordings(recordingsDir).map((abs) => {
     const rel = path.relative(projectPaths.resultsDir, abs).replaceAll("\\", "/");
     return rel.startsWith("/") ? rel.slice(1) : rel;
-  });
+  }));
 
   const caseResult = {
     id: `${runId}_playwright_spec`,
@@ -174,7 +323,7 @@ export async function POST(req: NextRequest) {
     skipped: false,
     detail: summary,
     duration_s: runResult.durationS,
-    recording: recordings[0] ?? null,
+    recording: pickPrimaryRecording(recordings),
   };
 
   const report = {
@@ -198,11 +347,12 @@ export async function POST(req: NextRequest) {
         project,
         run_id: runId,
         spec_path: resolvedSpecPath,
-        cwd,
+        cwd: effectiveCwd,
         passed,
         summary,
         exit_code: runResult.code,
         recordings,
+        otp_source: otpFromMcp ? "mcp:get_otp" : "none",
         started_at: startedAtIso,
         completed_at: completedAtIso,
         stdout_tail: runResult.stdout.slice(-16_000),

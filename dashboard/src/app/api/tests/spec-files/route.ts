@@ -26,7 +26,7 @@ function scanSpecFiles(baseDir: string): string[] {
         continue;
       }
       if (!entry.isFile()) continue;
-      if (!entry.name.endsWith(".spec.py")) continue;
+      if (!entry.name.endsWith(".spec.py") && !entry.name.endsWith(".spec.ts")) continue;
       out.push(abs);
       if (out.length >= MAX_RESULTS) break;
     }

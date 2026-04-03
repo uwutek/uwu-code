@@ -393,6 +393,14 @@ interface RunResult {
   results: CaseResult[];
 }
 
+interface SpecRunSnapshot {
+  runId: string;
+  passed: boolean;
+  summary: string;
+  recordings: string[];
+  report: RunResult;
+}
+
 interface AgentRun {
   run_id: string;
   project: string;
@@ -1245,6 +1253,7 @@ export default function TestsPage() {
   const [specFilesLoading, setSpecFilesLoading] = useState(false);
   const [specSearch, setSpecSearch] = useState("");
   const [specFolderPath, setSpecFolderPath] = useState("");
+  const [latestSpecRun, setLatestSpecRun] = useState<SpecRunSnapshot | null>(null);
 
   const [dbConnection, setDbConnection] = useState<DbConnectionForm>({
     dbType: "postgres",
@@ -1256,6 +1265,10 @@ export default function TestsPage() {
   });
   const [dbSearch, setDbSearch] = useState("");
   const [dbLoading, setDbLoading] = useState(false);
+  const [dbNamesLoading, setDbNamesLoading] = useState(false);
+  const [dbUsersLoading, setDbUsersLoading] = useState(false);
+  const [dbNames, setDbNames] = useState<string[]>([]);
+  const [dbUsers, setDbUsers] = useState<string[]>([]);
   const [dbTables, setDbTables] = useState<string[]>([]);
   const [selectedTable, setSelectedTable] = useState("");
   const [rowSearch, setRowSearch] = useState("");
@@ -1651,12 +1664,15 @@ export default function TestsPage() {
     [selectedProject, pollRunStatus, loadAgentRuns]
   );
 
-  const dbConnectionValid =
+  const dbDiscoveryConnectionValid =
     !!dbConnection.host.trim() &&
-    !!dbConnection.database.trim() &&
     !!dbConnection.username.trim() &&
     !!dbConnection.password &&
     Number(dbConnection.port) > 0;
+
+  const dbConnectionValid =
+    dbDiscoveryConnectionValid &&
+    !!dbConnection.database.trim();
 
   const buildDbConnectionPayload = useCallback(() => ({
     dbType: dbConnection.dbType,
@@ -1702,6 +1718,82 @@ export default function TestsPage() {
       setDbLoading(false);
     }
   }, [buildDbConnectionPayload, dbConnectionValid]);
+
+  const loadDatabaseNames = useCallback(async () => {
+    if (!dbDiscoveryConnectionValid) {
+      setCleanupStatus("Provide host, port, username, and password first.");
+      return;
+    }
+    setDbNamesLoading(true);
+    setCleanupStatus("");
+    try {
+      const res = await fetch("/api/tests/db-cleanup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "databases",
+          connection: buildDbConnectionPayload(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCleanupStatus(data.error ?? "Failed to load databases");
+        return;
+      }
+      const items = Array.isArray(data.databases)
+        ? data.databases.filter((value: unknown): value is string => typeof value === "string")
+        : [];
+      setDbNames(items);
+      if (!dbConnection.database.trim() && items.length > 0) {
+        setDbConnection((prev) => ({ ...prev, database: items[0] }));
+      }
+      if (items.length === 0) {
+        setCleanupStatus("No databases returned for this PostgreSQL user.");
+      }
+    } catch {
+      setCleanupStatus("Failed to load databases");
+    } finally {
+      setDbNamesLoading(false);
+    }
+  }, [buildDbConnectionPayload, dbConnection.database, dbDiscoveryConnectionValid]);
+
+  const loadDatabaseUsers = useCallback(async () => {
+    if (!dbDiscoveryConnectionValid) {
+      setCleanupStatus("Provide host, port, username, and password first.");
+      return;
+    }
+    setDbUsersLoading(true);
+    setCleanupStatus("");
+    try {
+      const res = await fetch("/api/tests/db-cleanup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "users",
+          connection: buildDbConnectionPayload(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCleanupStatus(data.error ?? "Failed to load users");
+        return;
+      }
+      const items = Array.isArray(data.users)
+        ? data.users.filter((value: unknown): value is string => typeof value === "string")
+        : [];
+      setDbUsers(items);
+      if (!dbConnection.username.trim() && items.length > 0) {
+        setDbConnection((prev) => ({ ...prev, username: items[0] }));
+      }
+      if (items.length === 0) {
+        setCleanupStatus("No login users returned for this PostgreSQL instance.");
+      }
+    } catch {
+      setCleanupStatus("Failed to load users");
+    } finally {
+      setDbUsersLoading(false);
+    }
+  }, [buildDbConnectionPayload, dbConnection.username, dbDiscoveryConnectionValid]);
 
   const loadRows = useCallback(async (reset: boolean) => {
     if (!dbConnectionValid || !selectedTable) return;
@@ -1781,13 +1873,15 @@ export default function TestsPage() {
         ? data.files.filter((value: unknown): value is string => typeof value === "string")
         : [];
       setSpecFiles(files);
-      if (!specPath && files.length > 0) setSpecPath(files[0]);
+      if (files.length > 0) {
+        setSpecPath((prev) => prev || files[0]);
+      }
     } catch {
       setSpecRunStatus("Failed to load spec files");
     } finally {
       setSpecFilesLoading(false);
     }
-  }, [selectedProject, specPath]);
+  }, [selectedProject]);
 
   const runPlaywrightSpec = useCallback(async () => {
     if (!selectedProject) return;
@@ -1808,7 +1902,29 @@ export default function TestsPage() {
         return;
       }
       const passed = data.passed === true;
-      setSpecRunStatus(`${passed ? "PASS" : "FAIL"}: ${String(data.summary ?? "Spec run completed")}`);
+      const runId = typeof data.run_id === "string" ? data.run_id : "";
+      const summary = String(data.summary ?? "Spec run completed");
+      const recordings = Array.isArray(data.recordings)
+        ? data.recordings.filter((value: unknown): value is string => typeof value === "string")
+        : [];
+      const report = (data.report && typeof data.report === "object") ? data.report as RunResult : {
+        project: selectedProject,
+        run_id: runId,
+        started_at: new Date().toISOString(),
+        total: 1,
+        passed: passed ? 1 : 0,
+        failed: passed ? 0 : 1,
+        skipped: 0,
+        results: [],
+      };
+      setLatestSpecRun({
+        runId,
+        passed,
+        summary,
+        recordings,
+        report,
+      });
+      setSpecRunStatus(`${passed ? "PASS" : "FAIL"}: ${summary}`);
       await loadResults(selectedProject);
     } catch {
       setSpecRunStatus("Spec run failed");
@@ -1825,10 +1941,13 @@ export default function TestsPage() {
     setSpecSearch("");
     setSpecFolderPath("");
     setSpecFiles([]);
+    setLatestSpecRun(null);
     void loadSpecFiles();
   }, [selectedProject, loadSpecFiles]);
 
   useEffect(() => {
+    setDbNames([]);
+    setDbUsers([]);
     setDbTables([]);
     setSelectedTable("");
     setDbRows([]);
@@ -2010,7 +2129,7 @@ export default function TestsPage() {
                     )}
                   </div>
                   <p className="text-xs" style={{ color: "#64748b" }}>
-                    Runs a generated Python Playwright spec file, records video artifacts, and stores pass/fail in Recent Runs.
+                    Runs a generated Playwright spec file (.spec.ts or .spec.py), records video/trace artifacts, and stores pass/fail in Recent Runs.
                   </p>
                   <div className="flex flex-wrap gap-2 items-center">
                     <button
@@ -2023,7 +2142,7 @@ export default function TestsPage() {
                       {specFilesLoading ? "Refreshing files…" : "Refresh spec files"}
                     </button>
                     <span className="text-[11px]" style={{ color: "#64748b" }}>
-                      Pick a discovered `.spec.py` file (file finder mode)
+                      Pick a discovered `.spec.ts` or `.spec.py` file (file finder mode)
                     </span>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
@@ -2075,7 +2194,7 @@ export default function TestsPage() {
                       ))}
                     {!specFilesLoading && specFiles.length === 0 && (
                       <div className="text-xs" style={{ color: "#64748b" }}>
-                        No `.spec.py` files found. Generate one via Discoverer first.
+                        No `.spec.ts` or `.spec.py` files found. Generate one via Discoverer first.
                       </div>
                     )}
                   </div>
@@ -2102,6 +2221,59 @@ export default function TestsPage() {
                       {specRunStatus}
                     </div>
                   )}
+                  {latestSpecRun && (
+                    <div className="rounded p-2.5 space-y-2" style={{ background: "rgba(2,6,23,0.45)", border: "1px solid rgba(30,45,74,0.7)" }}>
+                      <div className="flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "#94a3b8" }}>
+                        <span className="px-1.5 py-0.5 rounded" style={{ background: latestSpecRun.passed ? "rgba(0,255,136,0.12)" : "rgba(248,113,113,0.12)", color: latestSpecRun.passed ? "#00ff88" : "#f87171", border: `1px solid ${latestSpecRun.passed ? "rgba(0,255,136,0.25)" : "rgba(248,113,113,0.25)"}` }}>
+                          Latest Spec Run
+                        </span>
+                        <span className="font-mono">{latestSpecRun.runId || "(run id unavailable)"}</span>
+                      </div>
+                      <div className="text-xs" style={{ color: "#e2e8f0" }}>
+                        {latestSpecRun.summary}
+                      </div>
+                      <div className="text-[11px] font-mono" style={{ color: "#94a3b8" }}>
+                        Report: {latestSpecRun.report.passed}/{latestSpecRun.report.total} passed · {latestSpecRun.report.failed} failed · {latestSpecRun.report.skipped} skipped
+                      </div>
+                      {latestSpecRun.recordings.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {latestSpecRun.recordings.map((file) => {
+                            const lowered = file.toLowerCase();
+                            const isVideo = lowered.endsWith(".webm") || lowered.endsWith(".mp4");
+                            return (
+                              <a
+                                key={file}
+                                href={`/api/tests/recordings?file=${encodeURIComponent(file)}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-2 py-1 rounded text-[11px] font-mono"
+                                style={{
+                                  background: isVideo ? "rgba(0,212,255,0.1)" : "rgba(148,163,184,0.1)",
+                                  color: isVideo ? "#38bdf8" : "#94a3b8",
+                                  border: `1px solid ${isVideo ? "rgba(56,189,248,0.3)" : "rgba(148,163,184,0.3)"}`,
+                                }}
+                                title={file}
+                              >
+                                {isVideo ? "Open Video" : "Open Trace"}
+                              </a>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-[11px]" style={{ color: "#64748b" }}>
+                          No recording artifacts found for this spec run.
+                        </div>
+                      )}
+                      <details>
+                        <summary className="text-[11px] cursor-pointer" style={{ color: "#94a3b8" }}>
+                          View latest report JSON
+                        </summary>
+                        <pre className="mt-2 p-2 rounded text-[11px] overflow-x-auto" style={{ background: "rgba(0,0,0,0.35)", border: "1px solid rgba(30,45,74,0.65)", color: "#cbd5e1", maxHeight: 220 }}>
+                          {JSON.stringify(latestSpecRun.report, null, 2)}
+                        </pre>
+                      </details>
+                    </div>
+                  )}
                 </div>
 
                 <div className="rounded p-3 space-y-3" style={{ background: "rgba(10,14,26,0.6)", border: "1px solid rgba(30,45,74,0.6)" }}>
@@ -2116,7 +2288,7 @@ export default function TestsPage() {
                     )}
                   </div>
                   <p className="text-xs" style={{ color: "#64748b" }}>
-                    Enter DB connection details, load tables, search rows, and check only rows you want deleted before test runs.
+                    Enter DB connection details, load database/user dropdown options, then load tables and check only rows you want deleted before test runs.
                   </p>
                   <div className="grid md:grid-cols-2 gap-2">
                     <select
@@ -2141,19 +2313,41 @@ export default function TestsPage() {
                       onChange={(e) => setDbConnection((prev) => ({ ...prev, port: e.target.value }))}
                       placeholder="Port (5432)"
                     />
+                    <select
+                      className="px-3 py-2 rounded text-xs"
+                      style={INPUT_STYLE}
+                      value={dbConnection.database}
+                      onChange={(e) => setDbConnection((prev) => ({ ...prev, database: e.target.value }))}
+                    >
+                      <option value="">Select database (or type below)</option>
+                      {dbNames.map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="px-3 py-2 rounded text-xs"
+                      style={INPUT_STYLE}
+                      value={dbConnection.username}
+                      onChange={(e) => setDbConnection((prev) => ({ ...prev, username: e.target.value }))}
+                    >
+                      <option value="">Select user (or type below)</option>
+                      {dbUsers.map((user) => (
+                        <option key={user} value={user}>{user}</option>
+                      ))}
+                    </select>
                     <input
                       className="px-3 py-2 rounded text-xs"
                       style={INPUT_STYLE}
                       value={dbConnection.database}
                       onChange={(e) => setDbConnection((prev) => ({ ...prev, database: e.target.value }))}
-                      placeholder="Database"
+                      placeholder="Database (manual override)"
                     />
                     <input
                       className="px-3 py-2 rounded text-xs"
                       style={INPUT_STYLE}
                       value={dbConnection.username}
                       onChange={(e) => setDbConnection((prev) => ({ ...prev, username: e.target.value }))}
-                      placeholder="Username"
+                      placeholder="Username (manual override)"
                     />
                     <input
                       type="password"
@@ -2166,6 +2360,12 @@ export default function TestsPage() {
                   </div>
 
                   <div className="flex flex-wrap gap-2 items-center">
+                    <button type="button" onClick={() => void loadDatabaseNames()} className="px-2 py-1 rounded text-xs" style={BTN(dbDiscoveryConnectionValid && !dbNamesLoading, "#94a3b8")}>
+                      {dbNamesLoading ? "Loading DBs…" : "Load databases"}
+                    </button>
+                    <button type="button" onClick={() => void loadDatabaseUsers()} className="px-2 py-1 rounded text-xs" style={BTN(dbDiscoveryConnectionValid && !dbUsersLoading, "#94a3b8")}>
+                      {dbUsersLoading ? "Loading users…" : "Load users"}
+                    </button>
                     <button type="button" onClick={() => void loadTables()} className="px-2 py-1 rounded text-xs" style={BTN(dbConnectionValid && !dbLoading, "#00d4ff")}>
                       {dbLoading ? "Loading tables…" : "Load tables"}
                     </button>

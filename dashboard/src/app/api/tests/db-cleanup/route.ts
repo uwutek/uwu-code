@@ -12,6 +12,11 @@ interface DbConnectionInput {
   password: string;
 }
 
+interface ParseConnectionOptions {
+  requireDatabase?: boolean;
+  requireUsername?: boolean;
+}
+
 function normalizeIdentifier(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
@@ -41,19 +46,24 @@ function parseTableRef(rawTable: string): { schema: string; table: string } | nu
   return null;
 }
 
-function parseConnection(raw: unknown): DbConnectionInput | null {
+function parseConnection(raw: unknown, options: ParseConnectionOptions = {}): DbConnectionInput | null {
   if (!raw || typeof raw !== "object") return null;
+  const requireDatabase = options.requireDatabase ?? true;
+  const requireUsername = options.requireUsername ?? true;
   const input = raw as Record<string, unknown>;
   const dbType = String(input.dbType ?? "").trim();
   const host = String(input.host ?? "").trim();
-  const database = String(input.database ?? "").trim();
+  const databaseRaw = String(input.database ?? "").trim();
+  const database = databaseRaw || "postgres";
   const username = String(input.username ?? "").trim();
   const password = String(input.password ?? "");
   const portRaw = Number(input.port ?? 5432);
   const port = Number.isFinite(portRaw) ? Math.floor(portRaw) : NaN;
 
   if (dbType !== "postgres") return null;
-  if (!host || !database || !username || !password) return null;
+  if (!host || !password) return null;
+  if (requireDatabase && !databaseRaw) return null;
+  if (requireUsername && !username) return null;
   if (!Number.isFinite(port) || port < 1 || port > 65535) return null;
 
   return {
@@ -95,6 +105,34 @@ async function loadTables(connection: DbConnectionInput): Promise<string[]> {
       `
     );
     return result.rows.map((row) => `${row.table_schema}.${row.table_name}`);
+  });
+}
+
+async function loadDatabases(connection: DbConnectionInput): Promise<string[]> {
+  return withPgClient(connection, async (client) => {
+    const result = await client.query<{ datname: string }>(
+      `
+        SELECT datname
+        FROM pg_database
+        WHERE datistemplate = FALSE
+        ORDER BY datname
+      `
+    );
+    return result.rows.map((row) => row.datname).filter(Boolean);
+  });
+}
+
+async function loadUsers(connection: DbConnectionInput): Promise<string[]> {
+  return withPgClient(connection, async (client) => {
+    const result = await client.query<{ rolname: string }>(
+      `
+        SELECT rolname
+        FROM pg_roles
+        WHERE rolcanlogin = TRUE
+        ORDER BY rolname
+      `
+    );
+    return result.rows.map((row) => row.rolname).filter(Boolean);
   });
 }
 
@@ -185,7 +223,11 @@ export async function POST(req: NextRequest) {
 
   const input = body as Record<string, unknown>;
   const action = String(input.action ?? "").trim();
-  const connection = parseConnection(input.connection);
+  const isDiscoveryAction = action === "databases" || action === "users";
+  const connection = parseConnection(input.connection, {
+    requireDatabase: !isDiscoveryAction,
+    requireUsername: true,
+  });
   if (!connection) {
     return NextResponse.json({ error: "Valid postgres connection credentials are required" }, { status: 400 });
   }
@@ -194,6 +236,16 @@ export async function POST(req: NextRequest) {
     if (action === "tables") {
       const tables = await loadTables(connection);
       return NextResponse.json({ tables });
+    }
+
+    if (action === "databases") {
+      const databases = await loadDatabases(connection);
+      return NextResponse.json({ databases });
+    }
+
+    if (action === "users") {
+      const users = await loadUsers(connection);
+      return NextResponse.json({ users });
     }
 
     if (action === "rows") {
@@ -230,6 +282,6 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     supported: ["postgres"],
-    actions: ["tables", "rows", "delete"],
+    actions: ["databases", "users", "tables", "rows", "delete"],
   });
 }
