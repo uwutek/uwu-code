@@ -165,7 +165,7 @@ export function discovererCliModel(target: "claude" | "opencode"): string {
   if (target === "claude") {
     return settings.models?.discoverer_claude ?? "sonnet";
   }
-  return settings.models?.discoverer_opencode ?? "opencode/qwen3.6-plus-free";
+  return settings.models?.discoverer_opencode ?? "openai/gpt-5.3-codex";
 }
 
 export function writeCliPromptFile(target: "claude" | "opencode", project: string, prompt: string): string {
@@ -767,7 +767,7 @@ export async function generateWithCli(
   }
 
   const attemptErrors: string[] = [];
-  const cliTimeoutMs = target === "opencode" ? 120_000 : 180_000;
+  const cliTimeoutMs = target === "opencode" ? 240_000 : 180_000;
   const wrappedTimeout = target === "opencode";
   for (const command of candidates) {
     const envStrip = target === "opencode"
@@ -898,7 +898,7 @@ export async function generateSpecWithCli(
   }
 
   const attemptErrors: string[] = [];
-  const cliTimeoutMs = target === "opencode" ? 120_000 : 180_000;
+  const cliTimeoutMs = target === "opencode" ? 240_000 : 180_000;
   const wrappedTimeout = target === "opencode";
   for (const command of candidates) {
     const envStrip = target === "opencode"
