@@ -738,19 +738,12 @@ export async function generateWithCli(
   context: ReturnType<typeof collectWorkspaceContext>,
   options?: { sourceUrl?: string; spec?: string; webContext?: FetchedWebContext }
 ): Promise<{ testConfig: DiscovererTestConfig; agentDocs: string; model: string }> {
-  const envKeys = readEnvKeys();
-  const hasAnyApiKey = ["OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"].some(
-    (key) => !!envKeys[key as keyof typeof envKeys]?.trim()
-  );
-  if (!hasAnyApiKey) {
-    throw new Error(`No API keys configured for ${target} CLI generation. Add keys in Settings > API Keys.`);
-  }
-
   const prompt = discovererCliPrompt(context, options, target);
   writeCliPromptFile(target, project, prompt);
   const candidates = resolveCommandCandidates(target);
   const configuredModel = discovererCliModel(target);
   const cwd = context.workspacePath;
+  const envKeys = readEnvKeys();
   const runtimeDirs = resolveCliRuntimeDirs(target);
   const xdgConfig = runtimeDirs.xdgConfig;
   const xdgData = runtimeDirs.xdgData;
@@ -884,13 +877,6 @@ export async function generateSpecWithCli(
   const configuredModel = discovererCliModel(target);
   const cwd = context.workspacePath;
   const envKeys = readEnvKeys();
-  const hasAnyApiKey = ["OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"].some(
-    (key) => !!envKeys[key as keyof typeof envKeys]?.trim()
-  );
-  if (!hasAnyApiKey) {
-    throw new Error(`No API keys configured for ${target} CLI spec generation. Add keys in Settings > API Keys.`);
-  }
-
   const runtimeDirs = resolveCliRuntimeDirs(target);
 
   const envOverrides: Record<string, string> = {
