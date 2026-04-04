@@ -68,6 +68,27 @@ info "Starting installation..."
 echo ""
 
 ###############################################################################
+# Remove previous installation (upgrade support)
+###############################################################################
+if systemctl list-unit-files uwu-code.service &>/dev/null && systemctl is-active uwu-code &>/dev/null; then
+  info "Existing uwu-code detected — stopping old services..."
+  systemctl stop uwu-code uwu-code-ttyd uwu-code-openclaw 2>/dev/null || true
+  success "Old services stopped."
+fi
+
+if [ -d "$INSTALL_DIR/dashboard/.next" ]; then
+  info "Removing old dashboard build..."
+  rm -rf "$INSTALL_DIR/dashboard/.next"
+  rm -rf "$INSTALL_DIR/dashboard/node_modules"
+  success "Old build artifacts removed."
+fi
+
+if [ -d "$INSTALL_DIR/openclaw/__pycache__" ]; then
+  rm -rf "$INSTALL_DIR/openclaw/__pycache__"
+  rm -rf "$INSTALL_DIR/openclaw/.venv"
+fi
+
+###############################################################################
 # Detect OS
 ###############################################################################
 info "Detecting OS..."
@@ -141,8 +162,8 @@ install_nvim() {
 }
 
 NVIM_MIN_MAJOR=0
-NVIM_MIN_MINOR=12
-NVIM_MIN_PATCH=0
+NVIM_MIN_MINOR=11
+NVIM_MIN_PATCH=2
 
 nvim_version_ok() {
   command -v nvim &>/dev/null || return 1
