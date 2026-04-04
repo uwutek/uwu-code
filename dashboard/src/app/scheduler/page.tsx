@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import IssuesPanel from "@/app/components/IssuesPanel";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -929,6 +930,9 @@ export default function SchedulerPage() {
           onCancel={() => setShowForm(false)}
         />
       )}
+
+      {/* Git Issues Panel */}
+      <IssuesPanel />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b overflow-x-auto" style={{ borderColor: "#1e2d4a" }}>
