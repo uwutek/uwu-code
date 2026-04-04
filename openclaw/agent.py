@@ -315,7 +315,7 @@ def update_existing_task(
             log(f"Updated task {task_id} via API: {list(updates.keys())}")
             # Audit: log task update
             try:
-                log_task_updated(task_id, updates as any)
+                log_task_updated(task_id, updates)
             except Exception:
                 pass
             return task
@@ -331,7 +331,7 @@ def update_existing_task(
             save_tasks(tasks)
             # Audit: log task update
             try:
-                log_task_updated(task_id, updates as any)
+                log_task_updated(task_id, updates)
             except Exception:
                 pass
             return tasks[i]
