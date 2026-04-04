@@ -7,7 +7,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   const params = await context.params;
   try {
     const body = await request.json();
-    const { projectId } = body;
+    const { projectId, folderName } = body;
 
     if (!projectId) {
       return NextResponse.json({ error: "projectId is required" }, { status: 400 });
@@ -41,12 +41,31 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       spaceId,
       projectId,
       position: 0,
+      folderName: folderName || null,
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[/api/spaces/[id]/projects POST] Error:", error);
     return NextResponse.json({ error: "Failed to add project to space" }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const params = await context.params;
+  try {
+    const body = await request.json();
+    const { projectId, folderName } = body;
+    if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
+    const db = getDb();
+    await db
+      .update(schema.spaceProjects)
+      .set({ folderName: folderName ?? null })
+      .where(and(eq(schema.spaceProjects.spaceId, params.id), eq(schema.spaceProjects.projectId, projectId)));
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("[/api/spaces/[id]/projects PATCH] Error:", error);
+    return NextResponse.json({ error: "Failed to update project folder" }, { status: 500 });
   }
 }
 

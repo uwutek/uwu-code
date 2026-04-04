@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 
 interface TicketProvider {
   id: string;
@@ -100,14 +100,22 @@ export default function TicketProvidersPage() {
 
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-slate-900 text-white">
-        Loading...
+      <div className="h-screen flex flex-col bg-slate-900">
+        <div className="flex items-center justify-between px-4 py-3 bg-slate-800 border-b border-slate-700">
+          <div className="skeleton h-6 w-40" style={{ background: "rgba(30,45,74,0.8)" }} />
+          <div className="skeleton h-8 w-28 rounded" style={{ background: "rgba(30,45,74,0.8)" }} />
+        </div>
+        <div className="flex-1 p-4 space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="skeleton h-20 w-full rounded" style={{ background: "rgba(30,45,74,0.6)", animationDelay: `${i * 0.08}s` }} />
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-900 text-slate-100">
+    <div className="h-screen flex flex-col bg-slate-900 text-slate-100 fade-in">
       <div className="flex items-center justify-between px-4 py-3 bg-slate-800 border-b border-slate-700">
         <h1 className="text-lg font-semibold">Ticket Providers</h1>
         <button
@@ -198,10 +206,10 @@ export default function TicketProvidersPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {providers.map((provider) => {
+            {providers.map((provider, i) => {
               const config = parseConfig(provider.config);
               return (
-                <div key={provider.id} className="bg-slate-800 rounded-lg p-4">
+                <div key={provider.id} className="bg-slate-800 rounded-lg p-4 slide-up" style={{ "--i": i } as React.CSSProperties}>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <span className="text-lg">
@@ -221,7 +229,9 @@ export default function TicketProvidersPage() {
                         disabled={importing === provider.id || provider.provider === "jira"}
                         className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-sm disabled:opacity-50"
                       >
-                        {importing === provider.id ? "Importing..." : "Import Tickets"}
+                        {importing === provider.id ? (
+                          <span className="spinner w-3 h-3 inline-block" style={{ border: "1.5px solid rgba(255,255,255,0.3)", borderTopColor: "#fff" }} />
+                        ) : "Import Tickets"}
                       </button>
                       <button
                         type="button"

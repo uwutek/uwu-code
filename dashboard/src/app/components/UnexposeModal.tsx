@@ -193,7 +193,6 @@ export default function UnexposeModal({
                   <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 12a9 9 0 1 1-9-9" />
                   </svg>
-                  Removing rule…
                 </>
               ) : (
                 <>

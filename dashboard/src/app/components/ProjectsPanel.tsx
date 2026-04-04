@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { ProjectsData } from "../page";
 
 interface Props {
@@ -217,7 +217,7 @@ function CloneForm({ onClose, onCloned, existingNames }: CloneFormProps) {
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
           )}
-          {loading ? "Cloning…" : "Clone"}
+          Clone
         </button>
       </div>
 
@@ -298,7 +298,7 @@ export default function ProjectsPanel({ data, onRefresh }: Props) {
               border: "1px solid rgba(255, 215, 0, 0.2)",
             }}
           >
-            {data === null ? "…" : totalProjects}
+            {data === null ? <span className="spinner w-2.5 h-2.5 inline-block" style={{ border: "1.5px solid rgba(255,215,0,0.3)", borderTopColor: "#ffd700" }} /> : totalProjects}
           </span>
         </div>
 
@@ -408,13 +408,14 @@ export default function ProjectsPanel({ data, onRefresh }: Props) {
             </div>
           ) : (
             <div className="space-y-2">
-              {data.projects.map((proj) => (
-                <ProjectRow
-                  key={proj.path}
-                  project={proj}
-                  deleting={deletingPath === proj.path}
-                  onDelete={() => handleDeleteProject(proj.path, proj.name)}
-                />
+              {data.projects.map((proj, i) => (
+                <div key={proj.path} className="slide-up" style={{ "--i": i } as React.CSSProperties}>
+                  <ProjectRow
+                    project={proj}
+                    deleting={deletingPath === proj.path}
+                    onDelete={() => handleDeleteProject(proj.path, proj.name)}
+                  />
+                </div>
               ))}
             </div>
           )}
@@ -543,7 +544,9 @@ function ProjectRow({
           }}
           title="Delete project"
         >
-          {deleting ? "Deleting…" : "Delete"}
+          {deleting ? (
+            <span className="spinner w-3 h-3 inline-block" style={{ border: "1.5px solid rgba(255,68,68,0.3)", borderTopColor: "#ff4444" }} />
+          ) : "Delete"}
         </button>
       </div>
     </div>

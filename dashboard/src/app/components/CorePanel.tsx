@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { CoreData } from "../page";
 
 interface Props {
@@ -124,11 +124,12 @@ export default function CorePanel({
                   System Services
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {data.services.map((svc) => (
+                  {data.services.map((svc, i) => (
                     <div
                       key={svc.name}
-                      className="flex items-center gap-2.5 px-3 py-2 rounded"
+                      className="flex items-center gap-2.5 px-3 py-2 rounded slide-up"
                       style={{
+                        "--i": i,
                         background: svc.active
                           ? "rgba(0, 255, 136, 0.05)"
                           : "rgba(30, 45, 74, 0.4)",
@@ -137,7 +138,7 @@ export default function CorePanel({
                             ? "rgba(0, 255, 136, 0.15)"
                             : "rgba(30, 45, 74, 0.6)"
                         }`,
-                      }}
+                      } as React.CSSProperties}
                     >
                       <StatusDot active={svc.active} status={svc.status} />
                       <span

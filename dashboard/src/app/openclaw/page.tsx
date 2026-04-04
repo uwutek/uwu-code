@@ -137,7 +137,7 @@ export default function OpenClawPage() {
     .slice(0, 5);
 
   return (
-    <div className="max-w-screen-xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-screen-xl mx-auto px-4 py-6 space-y-6 fade-in">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div
@@ -213,8 +213,8 @@ export default function OpenClawPage() {
           { label: "Scheduled", value: scheduled, color: "#a855f7" },
           { label: "Completed", value: done,      color: "#00ff88" },
           { label: "Failed",    value: failed,    color: "#ff4444" },
-        ].map(({ label, value, color: c }) => (
-          <div key={label} className="card p-4 flex flex-col items-center justify-center gap-1">
+        ].map(({ label, value, color: c }, i) => (
+          <div key={label} className="card p-4 flex flex-col items-center justify-center gap-1 slide-up" style={{ "--i": i + 2 } as React.CSSProperties}>
             <div className="text-2xl font-bold" style={{ color: c }}>{value}</div>
             <div className="text-xs" style={{ color: "#4a5568" }}>{label}</div>
           </div>

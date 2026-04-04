@@ -207,7 +207,7 @@ export default function SpacesPage() {
   }
 
   return (
-    <div className="max-w-screen-xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-screen-xl mx-auto px-4 py-6 space-y-6 fade-in">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -307,7 +307,7 @@ export default function SpacesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {spaces.map((space) => {
+          {spaces.map((space, spaceIdx) => {
             const folders = getFolders(space);
             const ungrouped = getUngrouped(space);
             const isEditing = editingSpace?.id === space.id;
@@ -316,8 +316,8 @@ export default function SpacesPage() {
             return (
               <div
                 key={space.id}
-                className="card overflow-hidden flex flex-col"
-                style={{ borderTop: `3px solid ${space.color}` }}
+                className="card overflow-hidden flex flex-col slide-up"
+                style={{ borderTop: `3px solid ${space.color}`, "--i": spaceIdx } as React.CSSProperties}
               >
                 {isEditing ? (
                   <div className="p-4 space-y-3">

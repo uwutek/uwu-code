@@ -572,13 +572,10 @@ function ModelPicker({
                 )}
               </>
             ) : loading ? (
-              <span className="flex items-center gap-2">
-                <span
-                  className="spinner w-3 h-3 inline-block flex-shrink-0"
-                  style={{ border: "1.5px solid rgba(0,212,255,0.2)", borderTopColor: "#00d4ff" }}
-                />
-                <span style={{ color: "#4a5568" }}>Models…</span>
-              </span>
+              <span
+                className="spinner w-3 h-3 inline-block flex-shrink-0"
+                style={{ border: "1.5px solid rgba(0,212,255,0.2)", borderTopColor: "#00d4ff" }}
+              />
             ) : (
               <span style={{ color: "#4a5568" }}>{value || "Select model…"}</span>
             )}

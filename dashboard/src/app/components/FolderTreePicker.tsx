@@ -351,8 +351,10 @@ export default function FolderTreePicker({
 
           <div className="py-1 max-h-72 overflow-y-auto">
             {loading && (
-              <div className="text-xs px-3 py-3 text-center" style={{ color: "#4a5568" }}>
-                Loading...
+              <div className="flex flex-col gap-2 px-3 py-3">
+                {[80, 60, 70, 50, 65].map((w, i) => (
+                  <div key={i} className="skeleton h-3" style={{ width: `${w}%`, animationDelay: `${i * 0.08}s` }} />
+                ))}
               </div>
             )}
             {error && (

@@ -153,7 +153,7 @@ export default function FilesPage() {
   const hasChanges = fileContent !== originalContent;
 
   return (
-    <div className="h-screen flex flex-col" style={{ background: "var(--bg)", color: "var(--text)" }}>
+    <div className="h-screen flex flex-col fade-in" style={{ background: "var(--bg)", color: "var(--text)" }}>
       <div className="flex items-center gap-4 px-4 py-3" style={{ background: "var(--card)", borderBottom: "1px solid var(--border)" }}>
         <h1 className="text-lg font-semibold" style={{ color: "var(--text)" }}>File Explorer</h1>
         <select
@@ -204,7 +204,9 @@ export default function FilesPage() {
                 className="px-4 py-1.5 rounded text-sm disabled:opacity-50"
                 style={{ background: "rgba(0,255,136,.2)", color: "var(--green)", border: "1px solid var(--green)" }}
               >
-                {saving ? "Saving..." : "Save"}
+                {saving ? (
+                  <span className="spinner w-3 h-3 inline-block" style={{ border: "1.5px solid rgba(0,255,136,0.3)", borderTopColor: "#00ff88" }} />
+                ) : "Save"}
               </button>
             )}
           </>
@@ -226,7 +228,11 @@ export default function FilesPage() {
           <div className="col-span-1 overflow-hidden border-r" style={{ borderColor: 'var(--border)' }}>
             <div className="h-full overflow-auto p-2" style={{ overflow: 'auto' }}>
               {loading && tree.length === 0 ? (
-                <div style={{ color: 'var(--dim)' }}>Loading...</div>
+                <div className="flex flex-col gap-2 p-2">
+                  {[70, 55, 80, 45, 65, 60].map((w, i) => (
+                    <div key={i} className="skeleton h-3" style={{ width: `${w}%`, animationDelay: `${i * 0.07}s` }} />
+                  ))}
+                </div>
               ) : tree.length === 0 ? (
                 <div style={{ color: 'var(--dim)' }}>No files found</div>
               ) : (

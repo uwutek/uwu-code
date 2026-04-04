@@ -391,7 +391,7 @@ export default function GitPage() {
   const showNoProjects = projects.length === 0 && selectedProjectId === "";
 
   return (
-    <div className="h-screen flex flex-col" style={{ background: "var(--bg)", color: "var(--text)" }}>
+    <div className="h-screen flex flex-col fade-in" style={{ background: "var(--bg)", color: "var(--text)" }}>
       {showNoProjects ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center p-8">
@@ -428,11 +428,17 @@ export default function GitPage() {
               </select>
             </div>
             <div className="flex items-center gap-2">
+              {loading && (
+                <span
+                  className="spinner w-4 h-4"
+                  style={{ border: "2px solid rgba(0,212,255,0.2)", borderTopColor: "var(--cyan)" }}
+                />
+              )}
               <button
                 type="button"
                 onClick={loadStatus}
                 disabled={loading}
-                className="px-3 py-1.5 rounded text-xs font-medium transition-opacity"
+                className="px-3 py-1.5 rounded text-xs font-medium transition-opacity disabled:opacity-50"
                 style={{ background: "rgba(30,45,74,0.5)", border: "1px solid var(--border)", color: "var(--dim)" }}
               >
                 Refresh
@@ -589,8 +595,15 @@ export default function GitPage() {
 
           {/* Content */}
           <div className="flex-1 overflow-auto">
+            {activeTab === "status" && !status && loading && (
+              <div className="p-4 space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="skeleton rounded-lg" style={{ height: 60, animationDelay: `${(i - 1) * 0.08}s` }} />
+                ))}
+              </div>
+            )}
             {activeTab === "status" && status && (
-              <div className="p-4 space-y-4">
+              <div className="p-4 space-y-4 fade-in">
                 {/* Staged */}
                 {stagedFiles.length > 0 && (
                   <div className="rounded-lg overflow-hidden" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
@@ -739,16 +752,19 @@ export default function GitPage() {
                         type="button"
                         onClick={handleCommit}
                         disabled={loading || !commitMessage.trim() || stagedFiles.length === 0}
-                        className="px-5 py-2 rounded text-sm font-medium transition-opacity"
+                        className="px-5 py-2 rounded text-sm font-medium transition-opacity flex items-center justify-center"
                         style={{
                           background: stagedFiles.length > 0 && commitMessage.trim()
                             ? "rgba(0,255,136,0.2)"
                             : "rgba(30,45,74,0.5)",
                           border: "1px solid var(--border)",
                           color: stagedFiles.length > 0 && commitMessage.trim() ? "var(--green)" : "var(--dim)",
+                          minWidth: "80px",
                         }}
                       >
-                        Commit
+                        {loading ? (
+                          <span className="spinner w-4 h-4 inline-block" style={{ border: "2px solid rgba(0,255,136,0.2)", borderTopColor: "#00ff88" }} />
+                        ) : "Commit"}
                       </button>
                     </div>
                   </div>
@@ -765,7 +781,7 @@ export default function GitPage() {
             )}
 
             {activeTab === "branches" && (
-              <div className="p-4 space-y-4">
+              <div className="p-4 space-y-4 fade-in">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-medium" style={{ color: "var(--text)" }}>Branches</h3>
                   <button
@@ -795,15 +811,18 @@ export default function GitPage() {
                     <button
                       type="button"
                       onClick={handleCreateBranch}
-                      disabled={!newBranchName.trim()}
-                      className="px-4 py-2 rounded text-sm font-medium"
+                      disabled={!newBranchName.trim() || loading}
+                      className="px-4 py-2 rounded text-sm font-medium flex items-center justify-center"
                       style={{
                         background: newBranchName.trim() ? "rgba(0,255,136,0.2)" : "rgba(30,45,74,0.5)",
                         border: "1px solid var(--border)",
                         color: newBranchName.trim() ? "var(--green)" : "var(--dim)",
+                        minWidth: "70px",
                       }}
                     >
-                      Create
+                      {loading ? (
+                        <span className="spinner w-3.5 h-3.5 inline-block" style={{ border: "2px solid rgba(0,255,136,0.2)", borderTopColor: "#00ff88" }} />
+                      ) : "Create"}
                     </button>
                   </div>
                 )}
@@ -854,13 +873,13 @@ export default function GitPage() {
             )}
 
             {activeTab === "log" && (
-              <div className="p-4">
+              <div className="p-4 fade-in">
                 <div className="rounded-lg overflow-hidden" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
                   {logs.map((log, i) => (
                     <div
                       key={log.hash}
-                      className="flex items-start gap-4 px-4 py-3 group"
-                      style={{ borderBottom: i < logs.length - 1 ? "1px solid var(--border)" : "none" }}
+                      className="flex items-start gap-4 px-4 py-3 group slide-up"
+                      style={{ borderBottom: i < logs.length - 1 ? "1px solid var(--border)" : "none", "--i": Math.min(i, 10) } as React.CSSProperties}
                     >
                       <span
                         className="font-mono text-xs px-2 py-1 rounded shrink-0"
@@ -883,7 +902,7 @@ export default function GitPage() {
             )}
 
             {activeTab === "worktrees" && (
-              <div className="p-4 space-y-4">
+              <div className="p-4 space-y-4 fade-in">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-medium" style={{ color: "var(--text)" }}>Worktrees</h3>
                   <button
@@ -920,15 +939,18 @@ export default function GitPage() {
                     <button
                       type="button"
                       onClick={handleCreateWorktree}
-                      disabled={!newWorktreeName.trim()}
-                      className="px-4 py-2 rounded text-sm font-medium"
+                      disabled={!newWorktreeName.trim() || loading}
+                      className="px-4 py-2 rounded text-sm font-medium flex items-center justify-center"
                       style={{
                         background: newWorktreeName.trim() ? "rgba(0,255,136,0.2)" : "rgba(30,45,74,0.5)",
                         border: "1px solid var(--border)",
                         color: newWorktreeName.trim() ? "var(--green)" : "var(--dim)",
+                        minWidth: "70px",
                       }}
                     >
-                      Create
+                      {loading ? (
+                        <span className="spinner w-3.5 h-3.5 inline-block" style={{ border: "2px solid rgba(0,255,136,0.2)", borderTopColor: "#00ff88" }} />
+                      ) : "Create"}
                     </button>
                   </div>
                 )}

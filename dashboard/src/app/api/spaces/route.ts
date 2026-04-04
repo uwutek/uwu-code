@@ -10,19 +10,23 @@ export async function GET() {
 
     const spacesWithProjects = await Promise.all(
       allSpaces.map(async (space) => {
-        const spaceProjects = await db
-          .select({ projectId: schema.spaceProjects.projectId })
+        const spaceProjectRows = await db
+          .select({
+            projectId: schema.spaceProjects.projectId,
+            folderName: schema.spaceProjects.folderName,
+          })
           .from(schema.spaceProjects)
           .where(eq(schema.spaceProjects.spaceId, space.id));
 
         const projects = await Promise.all(
-          spaceProjects.map(async (sp) => {
+          spaceProjectRows.map(async (sp) => {
             const project = await db
               .select()
               .from(schema.projects)
               .where(eq(schema.projects.id, sp.projectId))
               .get();
-            return project;
+            if (!project) return null;
+            return { ...project, folderName: sp.folderName ?? null };
           })
         );
 

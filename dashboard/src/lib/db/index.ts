@@ -79,7 +79,8 @@ function ensureTables(sqliteDb: Database.Database) {
       id TEXT PRIMARY KEY,
       space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
       project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      position REAL NOT NULL
+      position REAL NOT NULL,
+      folder_name TEXT
     );
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
@@ -128,6 +129,15 @@ function ensureTables(sqliteDb: Database.Database) {
   `);
 }
 
+function runMigrations(sqliteDb: Database.Database) {
+  // Add folder_name to space_projects if missing
+  try {
+    sqliteDb.exec(`ALTER TABLE space_projects ADD COLUMN folder_name TEXT`);
+  } catch {
+    // Column already exists, ignore
+  }
+}
+
 export function getDb() {
   if (db) return db;
 
@@ -140,6 +150,7 @@ export function getDb() {
     sqlite.pragma("journal_mode = WAL");
     sqlite.pragma("foreign_keys = ON");
     ensureTables(sqlite);
+    runMigrations(sqlite);
 
     db = drizzle(sqlite, { schema });
   } catch (error) {

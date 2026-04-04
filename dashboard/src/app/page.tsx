@@ -310,7 +310,7 @@ export default function DashboardPage() {
   }, [sessions]);
 
   return (
-    <div className="max-w-screen-2xl mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-screen-2xl mx-auto px-4 py-6 space-y-6 fade-in">
       {/* Row 1: System Header (full width) */}
       <SystemHeader
         data={systemData}

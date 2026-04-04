@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { PortInfo } from "../page";
 
 interface ExposedPort {
@@ -110,7 +110,7 @@ export default function ExposedPortsPanel({ ports, onPortsChanged, refreshToken 
               border: "1px solid rgba(0, 212, 255, 0.25)",
             }}
           >
-            {exposedLoading ? "…" : `${sortedExposedPorts.length} active`}
+            {exposedLoading ? <span className="spinner w-2.5 h-2.5 inline-block" style={{ border: "1.5px solid rgba(0,212,255,0.3)", borderTopColor: "#00d4ff" }} /> : `${sortedExposedPorts.length} active`}
           </span>
         </div>
         <svg
@@ -139,13 +139,13 @@ export default function ExposedPortsPanel({ ports, onPortsChanged, refreshToken 
             </div>
           ) : (
             <div className="space-y-1.5">
-              {sortedExposedPorts.map((item) => {
+              {sortedExposedPorts.map((item, i) => {
                 const matched = listeningPortSet.has(item.port);
                 return (
                   <div
                     key={item.port}
-                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded px-2 py-1.5"
-                    style={{ background: "rgba(15,23,42,0.75)", border: "1px solid #1e2d4a" }}
+                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded px-2 py-1.5 slide-up"
+                    style={{ background: "rgba(15,23,42,0.75)", border: "1px solid #1e2d4a", "--i": i } as React.CSSProperties}
                   >
                     <div className="min-w-0 flex items-center gap-2 flex-wrap">
                       <span
@@ -192,7 +192,9 @@ export default function ExposedPortsPanel({ ports, onPortsChanged, refreshToken 
                         border: "1px solid rgba(255,68,68,0.3)",
                       }}
                     >
-                      {unexposingPort === item.port ? "Stopping…" : "Stop"}
+                      {unexposingPort === item.port ? (
+                        <span className="spinner w-3 h-3 inline-block" style={{ border: "1.5px solid rgba(255,68,68,0.3)", borderTopColor: "#ff4444" }} />
+                      ) : "Stop"}
                     </button>
                   </div>
                 );

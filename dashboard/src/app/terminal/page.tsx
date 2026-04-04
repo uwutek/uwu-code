@@ -13,7 +13,7 @@ export default function TerminalPage() {
   const terminalInstance = useRef<any>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [xtermLoaded, setXtermLoaded] = useState(false);
+  const [, setXtermLoaded] = useState(false);
 
   useEffect(() => {
     const loadXterm = async () => {
@@ -23,10 +23,12 @@ export default function TerminalPage() {
 
       if (!terminalRef.current || terminalInstance.current) return;
 
+      const isMobile = window.innerWidth < 640;
       const term = new Terminal({
-        fontSize: 14,
+        fontSize: isMobile ? 12 : 14,
         fontFamily: "Menlo, Monaco, 'Courier New', monospace",
         cursorBlink: true,
+        scrollback: 1000,
         theme: {
           background: "#1e1e1e",
           foreground: "#d4d4d4",
@@ -125,41 +127,48 @@ export default function TerminalPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-background">
-      <div className="flex items-center justify-between px-4 py-2 bg-muted border-b border-border">
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-foreground">
+    <div className="flex flex-col bg-background fade-in" style={{ height: "100dvh" }}>
+      <div className="flex flex-col gap-2 px-3 py-2 bg-muted border-b border-border sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="text-sm text-foreground truncate">
             Terminal {session ? `(${session.tmuxSession})` : ""}
           </span>
-          <span
-            className={`text-xs px-2 py-0.5 rounded ${
-              session
-                ? "bg-green-600 text-white"
-                : "bg-yellow-600 text-white"
-            }`}
-          >
-            {session ? "Session Active" : "Initializing..."}
-          </span>
+          {session ? (
+            <span className="shrink-0 text-xs px-2 py-0.5 rounded bg-green-600 text-white">
+              Active
+            </span>
+          ) : (
+            <span className="shrink-0 flex items-center gap-1.5 text-xs px-2 py-0.5 rounded bg-yellow-600 text-white">
+              <span
+                className="spinner w-2.5 h-2.5 inline-block"
+                style={{
+                  border: "1.5px solid rgba(255,255,255,0.3)",
+                  borderTopColor: "#fff",
+                }}
+              />
+            </span>
+          )}
         </div>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={createNewTab}
-            className="px-3 py-1 text-sm bg-primary hover:bg-primary/90 text-white rounded"
+            className="flex-1 sm:flex-none px-3 py-1.5 text-sm bg-primary hover:bg-primary/90 text-white rounded"
           >
             New Tab
           </button>
           <button
             type="button"
             onClick={openFullTerminal}
-            className="px-3 py-1 text-sm bg-muted text-white rounded hover:bg-muted/80"
+            className="flex-1 sm:flex-none px-3 py-1.5 text-sm bg-muted text-white rounded hover:bg-muted/80 whitespace-nowrap"
           >
-            Open Full Terminal
+            <span className="hidden sm:inline">Open Full Terminal</span>
+            <span className="sm:hidden">Full</span>
           </button>
           <button
             type="button"
             onClick={closeSession}
-            className="px-3 py-1 text-sm bg-destructive text-white rounded hover:bg-destructive/90"
+            className="flex-1 sm:flex-none px-3 py-1.5 text-sm bg-destructive text-white rounded hover:bg-destructive/90"
           >
             Close
           </button>
@@ -170,7 +179,7 @@ export default function TerminalPage() {
         <div className="px-4 py-2 bg-destructive text-white text-sm">{error}</div>
       )}
 
-      <div ref={terminalRef} className="flex-1 p-2" />
+      <div ref={terminalRef} className="flex-1 overflow-hidden p-1" />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { PortInfo, TmuxSession, TmuxWindow } from "../page";
 
 interface ExposedPort {
@@ -193,7 +193,9 @@ function WindowRow({
                   border: "1px solid rgba(255,68,68,0.3)",
                 }}
               >
-                {unexposingPort === p.port ? "Stopping…" : "Stop"}
+                {unexposingPort === p.port ? (
+                  <span className="spinner w-3 h-3 inline-block" style={{ border: "1.5px solid rgba(255,68,68,0.3)", borderTopColor: "#ff4444" }} />
+                ) : "Stop"}
               </button>
             ) : (
               <button
@@ -386,7 +388,9 @@ function SessionCard({
             }}
             title="Stop tmux session"
           >
-            {stopping ? "Stopping…" : "Stop"}
+            {stopping ? (
+              <span className="spinner w-3 h-3 inline-block" style={{ border: "1.5px solid rgba(255,68,68,0.3)", borderTopColor: "#ff4444" }} />
+            ) : "Stop"}
           </button>
         </div>
       </button>
@@ -503,7 +507,7 @@ export default function SessionsPanel({ sessions, ports, loading, onRefresh, onE
             border: "1px solid rgba(0, 255, 136, 0.2)",
           }}
         >
-          {loading ? "…" : `${sessions.length} sessions`}
+          {loading ? <span className="spinner w-2.5 h-2.5 inline-block" style={{ border: "1.5px solid rgba(0,255,136,0.3)", borderTopColor: "#00ff88" }} /> : `${sessions.length} sessions`}
         </span>
       </div>
 
@@ -562,18 +566,19 @@ export default function SessionsPanel({ sessions, ports, loading, onRefresh, onE
         </div>
       ) : (
         <div className="space-y-3">
-          {sessions.map((session) => (
-            <SessionCard
-              key={session.name}
-              session={session}
-              ports={ports}
-              defaultExpanded={false}
-              onStopped={onRefresh}
-              exposedPorts={exposedSet}
-              onExpose={onExpose}
-              onUnexpose={handleUnexpose}
-              unexposingPort={unexposingPort}
-            />
+          {sessions.map((session, i) => (
+            <div key={session.name} className="slide-up" style={{ "--i": i } as React.CSSProperties}>
+              <SessionCard
+                session={session}
+                ports={ports}
+                defaultExpanded={false}
+                onStopped={onRefresh}
+                exposedPorts={exposedSet}
+                onExpose={onExpose}
+                onUnexpose={handleUnexpose}
+                unexposingPort={unexposingPort}
+              />
+            </div>
           ))}
         </div>
       )}

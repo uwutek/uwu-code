@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 interface Project {
   id: string;
@@ -125,9 +125,13 @@ function ProjectPanel({
         </div>
         <div className="flex items-center gap-2">
           {loading && (
-            <span className="text-xs" style={{ color: "#4a5568" }}>
-              Loading...
-            </span>
+            <span
+              className="spinner w-3.5 h-3.5 inline-block"
+              style={{
+                border: "1.5px solid rgba(0,212,255,0.2)",
+                borderTopColor: "#00d4ff",
+              }}
+            />
           )}
           {error && (
             <span className="text-xs" style={{ color: "#ff4444" }}>
@@ -274,15 +278,16 @@ function MilestoneSection({ milestoneGroup, repoOwner, repoName, onAddToQueue, a
 
       {expanded && (
         <div className="space-y-1 p-2">
-          {issues.map((issue) => (
-            <IssueRow
-              key={issue.id}
-              issue={issue}
-              repoOwner={repoOwner}
-              repoName={repoName}
-              onAddToQueue={onAddToQueue}
-              adding={addingIssueId === issue.id}
-            />
+          {issues.map((issue, i) => (
+            <div key={issue.id} className="slide-up" style={{ "--i": i } as React.CSSProperties}>
+              <IssueRow
+                issue={issue}
+                repoOwner={repoOwner}
+                repoName={repoName}
+                onAddToQueue={onAddToQueue}
+                adding={addingIssueId === issue.id}
+              />
+            </div>
           ))}
         </div>
       )}
@@ -355,7 +360,9 @@ function IssueRow({ issue, repoOwner, repoName, onAddToQueue, adding }: IssueRow
             cursor: adding ? "wait" : "pointer",
           }}
         >
-          {adding ? "Adding..." : "+ Queue"}
+          {adding ? (
+            <span className="spinner w-3 h-3 inline-block" style={{ border: "1.5px solid rgba(0,255,136,0.3)", borderTopColor: "#00ff88" }} />
+          ) : "+ Queue"}
         </button>
       )}
     </div>

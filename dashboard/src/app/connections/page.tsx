@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 
 interface Worktree {
   id: string;
@@ -116,14 +116,22 @@ export default function ConnectionsPage() {
 
   if (loading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-slate-900 text-white">
-        Loading...
+      <div className="h-screen flex flex-col bg-slate-900">
+        <div className="flex items-center justify-between px-4 py-3 bg-slate-800 border-b border-slate-700">
+          <div className="skeleton h-6 w-48" style={{ background: "rgba(30,45,74,0.8)" }} />
+          <div className="skeleton h-8 w-32 rounded" style={{ background: "rgba(30,45,74,0.8)" }} />
+        </div>
+        <div className="flex-1 p-4 space-y-3">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="skeleton h-16 w-full rounded" style={{ background: "rgba(30,45,74,0.6)", animationDelay: `${i * 0.08}s` }} />
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-900 text-slate-100">
+    <div className="h-screen flex flex-col bg-slate-900 text-slate-100 fade-in">
       <div className="flex items-center justify-between px-4 py-3 bg-slate-800 border-b border-slate-700">
         <h1 className="text-lg font-semibold">Worktree Connections</h1>
         <button
@@ -227,8 +235,8 @@ export default function ConnectionsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {connections.map((conn) => (
-              <div key={conn.id} className="bg-slate-800 rounded-lg p-4">
+            {connections.map((conn, i) => (
+              <div key={conn.id} className="bg-slate-800 rounded-lg p-4 slide-up" style={{ "--i": i } as React.CSSProperties}>
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <div className="flex flex-col items-center px-3 py-2 bg-slate-700 rounded">

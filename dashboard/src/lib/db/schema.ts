@@ -133,6 +133,7 @@ export const spaceProjects = sqliteTable("space_projects", {
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
   position: real("position").notNull(),
+  folderName: text("folder_name"),
 });
 
 export const spaceProjectsRelations = relations(spaceProjects, ({ one }) => ({

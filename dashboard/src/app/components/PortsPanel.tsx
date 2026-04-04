@@ -155,7 +155,7 @@ export default function PortsPanel({
               border: "1px solid rgba(0, 212, 255, 0.2)",
             }}
           >
-            {loading ? "…" : sorted.length}
+            {loading ? <span className="spinner w-2.5 h-2.5 inline-block" style={{ border: "1.5px solid rgba(0,212,255,0.3)", borderTopColor: "#00d4ff" }} /> : sorted.length}
           </span>
           {/* Filter input — only shown when expanded */}
           {!collapsed && (

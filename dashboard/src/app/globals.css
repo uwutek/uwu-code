@@ -200,3 +200,48 @@ code, pre, tt, kbd, samp {
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
 }
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, rgba(30,45,74,0.4) 25%, rgba(30,45,74,0.9) 50%, rgba(30,45,74,0.4) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+/* Spinner */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  animation: spin 0.7s linear infinite;
+  border-radius: 50%;
+}
+
+/* Fade-in */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in {
+  animation: fade-in 0.3s ease-out both;
+}
+
+/* Slide-up (for cards/content appearing) */
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.slide-up {
+  animation: slide-up 0.25s ease-out both;
+}
+
+/* Staggered children: add --i CSS variable on the element to offset delay */
+.stagger > * {
+  animation: slide-up 0.22s ease-out both;
+  animation-delay: calc(var(--i, 0) * 0.05s);
+}
