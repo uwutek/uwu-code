@@ -388,9 +388,22 @@ success "Repo ready."
 ###############################################################################
 info "Installing dashboard dependencies..."
 cd "$INSTALL_DIR/dashboard"
-npm ci --prefer-offline --loglevel=error 2>/dev/null || npm install --loglevel=error
+if ! command -v bun &>/dev/null; then
+  info "Installing Bun..."
+  curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1
+  export BUN_INSTALL="/root/.bun"
+  export PATH="$BUN_INSTALL/bin:$PATH"
+  ln -sf "$BUN_INSTALL/bin/bun" /usr/local/bin/bun
+  success "Bun $(bun --version) installed."
+else
+  success "Bun $(bun --version) already installed."
+fi
+
+if ! bun install --frozen-lockfile; then
+  error "Failed to install dashboard dependencies with --frozen-lockfile. Please fix the Bun version or update and commit the lockfile before retrying."
+fi
 info "Building dashboard..."
-npm run build >/dev/null 2>&1
+bun run build >/dev/null 2>&1
 success "Dashboard built."
 
 ###############################################################################
@@ -430,7 +443,7 @@ WorkingDirectory=$INSTALL_DIR/dashboard
 Environment=NODE_ENV=production
 Environment=PORT=$DASHBOARD_PORT
 Environment=AUTH_SECRET=$AUTH_SECRET
-ExecStart=/usr/bin/npm run start
+ExecStart=/usr/local/bin/bun run start
 Restart=on-failure
 RestartSec=5
 
@@ -623,5 +636,5 @@ echo -e "  Manage:"
 echo -e "    ${YELLOW}systemctl status uwu-code uwu-code-openclaw${NC}"
 echo ""
 echo -e "  Update:"
-echo -e "    ${YELLOW}cd $INSTALL_DIR && git pull && cd dashboard && npm ci && npm run build && systemctl restart uwu-code${NC}"
+echo -e "    ${YELLOW}cd $INSTALL_DIR && git pull && cd dashboard && bun install --frozen-lockfile && bun run build && systemctl restart uwu-code${NC}"
 echo ""
