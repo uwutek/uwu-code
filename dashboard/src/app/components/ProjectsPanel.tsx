@@ -34,11 +34,13 @@ function truncateUrl(url: string, max = 50): string {
 interface CloneFormProps {
   onClose: () => void;
   onCloned: () => void;
+  existingNames: string[];
 }
 
-function CloneForm({ onClose, onCloned }: CloneFormProps) {
+function CloneForm({ onClose, onCloned, existingNames }: CloneFormProps) {
   const [url, setUrl] = useState("");
-  const [dest, setDest] = useState("");
+  const [destOption, setDestOption] = useState<string>("");
+  const [customDest, setCustomDest] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -48,22 +50,33 @@ function CloneForm({ onClose, onCloned }: CloneFormProps) {
       setError("Git URL is required.");
       return;
     }
+    const repoName = url.trim().replace(/\.git$/, "").split("/").pop() || "repo";
+    const folderName = destOption === "__custom__" ? customDest.trim() : destOption || repoName;
+
+    if (destOption === "__custom__" && !customDest.trim()) {
+      setError("Folder name is required.");
+      return;
+    }
+    if (destOption && destOption !== "__custom__" && existingNames.includes(destOption)) {
+      setError(`Folder "${destOption}" already exists.`);
+      return;
+    }
+
     setLoading(true);
     setError("");
     setSuccess("");
     try {
-      // Derive project name from git URL (e.g. "uwu-code" from "https://github.com/user/uwu-code.git")
-      const repoName = url.trim().replace(/\.git$/, "").split("/").pop() || "repo";
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: dest.trim() || repoName, gitUrl: url.trim() }),
+        body: JSON.stringify({ name: folderName, gitUrl: url.trim() }),
       });
       const data = await res.json();
       if (data.success) {
         setSuccess(data.message || "Cloned successfully");
         setUrl("");
-        setDest("");
+        setDestOption("");
+        setCustomDest("");
         onCloned();
       } else {
         setError(data.message || "Clone failed.");
@@ -74,6 +87,9 @@ function CloneForm({ onClose, onCloned }: CloneFormProps) {
       setLoading(false);
     }
   };
+
+  const repoName = url ? url.replace(/\.git$/, "").split("/").pop() || "repo" : "";
+  const showCustomInput = destOption === "__custom__";
 
   return (
     <div
@@ -109,7 +125,7 @@ function CloneForm({ onClose, onCloned }: CloneFormProps) {
         placeholder="https://github.com/user/repo.git"
         value={url}
         onChange={(e) => setUrl(e.target.value)}
-        className="w-full px-3 py-1.5 rounded text-xs outline-none"
+        className="w-full px-3 py-1.5 rounded text-xs outline-none font-mono"
         style={{
           background: "rgba(10, 14, 26, 0.8)",
           border: "1px solid rgba(30, 45, 74, 0.8)",
@@ -123,17 +139,15 @@ function CloneForm({ onClose, onCloned }: CloneFormProps) {
         }
       />
 
-      <div className="flex flex-col sm:flex-row gap-2">
-        <input
-          type="text"
-          placeholder="Destination folder (optional)"
-          value={dest}
-          onChange={(e) => setDest(e.target.value)}
-          className="flex-1 w-full px-3 py-1.5 rounded text-xs outline-none"
+      <div className="flex flex-col gap-2">
+        <select
+          value={destOption}
+          onChange={(e) => setDestOption(e.target.value)}
+          className="w-full px-3 py-1.5 rounded text-xs outline-none"
           style={{
             background: "rgba(10, 14, 26, 0.8)",
             border: "1px solid rgba(30, 45, 74, 0.8)",
-            color: "#e2e8f0",
+            color: destOption ? "#e2e8f0" : "#64748b",
           }}
           onFocus={(e) =>
             (e.currentTarget.style.borderColor = "rgba(0, 212, 255, 0.4)")
@@ -141,12 +155,46 @@ function CloneForm({ onClose, onCloned }: CloneFormProps) {
           onBlur={(e) =>
             (e.currentTarget.style.borderColor = "rgba(30, 45, 74, 0.8)")
           }
-        />
+        >
+          <option value="">Use repo name{repoName ? ` (${repoName})` : ""}</option>
+          <option value="__custom__">Custom folder name...</option>
+          {existingNames.length > 0 && (
+            <optgroup label="— Existing (will error) —">
+              {existingNames.map((name) => (
+                <option key={name} value={name} disabled>
+                  {name}
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+
+        {showCustomInput && (
+          <input
+            type="text"
+            placeholder="my-project-name"
+            value={customDest}
+            onChange={(e) => setCustomDest(e.target.value)}
+            className="w-full px-3 py-1.5 rounded text-xs outline-none font-mono"
+            style={{
+              background: "rgba(10, 14, 26, 0.8)",
+              border: "1px solid rgba(0, 212, 255, 0.3)",
+              color: "#e2e8f0",
+            }}
+            onFocus={(e) =>
+              (e.currentTarget.style.borderColor = "rgba(0, 212, 255, 0.5)")
+            }
+            onBlur={(e) =>
+              (e.currentTarget.style.borderColor = "rgba(0, 212, 255, 0.3)")
+            }
+          />
+        )}
+
         <button
           type="button"
           onClick={handleClone}
           disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-all flex-shrink-0"
+          className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-all"
           style={{
             background: loading
               ? "rgba(30, 45, 74, 0.5)"
@@ -325,6 +373,7 @@ export default function ProjectsPanel({ data, onRefresh }: Props) {
             setShowCloneForm(false);
             onRefresh();
           }}
+          existingNames={data?.projects?.map((p) => p.name) || []}
         />
       )}
 
