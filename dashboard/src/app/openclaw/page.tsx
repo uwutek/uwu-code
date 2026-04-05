@@ -158,10 +158,10 @@ export default function OpenClawPage() {
       </div>
 
       {/* Status + Stats row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
         {/* Status card */}
         <div
-          className="sm:col-span-2 card p-4 flex items-center gap-4"
+          className="col-span-2 card p-4 flex items-center gap-4"
           style={{ border: `1px solid ${color}30`, background: bg }}
         >
           <div className="relative flex-shrink-0">

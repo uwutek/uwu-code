@@ -14,20 +14,26 @@
   --red: #ff4444;
   --text: #e2e8f0;
   --dim: #94a3b8;
+  --btn-bg: rgba(30,45,74,0.5);
+  --hover-bg: rgba(255,255,255,0.05);
+  --selected-bg: rgba(0,212,255,0.1);
 }
 
 .light,
 [data-theme="light"],
 [class~="light"] {
-  --bg: #ffffff;
-  --card: #f8fafc;
-  --border: #e2e8f0;
+  --bg: #f0f2f5;
+  --card: #e8ecf1;
+  --border: #cdd2da;
   --green: #059669;
   --cyan: #0891b2;
   --yellow: #d97706;
   --red: #dc2626;
   --text: #1e293b;
   --dim: #64748b;
+  --btn-bg: rgba(0,0,0,0.06);
+  --hover-bg: rgba(0,0,0,0.05);
+  --selected-bg: rgba(8,145,178,0.12);
 }
 
 * {
@@ -65,14 +71,14 @@ code, pre, tt, kbd, samp {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0a0e1a;
+  background: var(--bg);
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e2d4a;
+  background: var(--border);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #2e4a7a;
+  background: var(--dim);
 }
 
 /* Selection */
@@ -207,7 +213,7 @@ code, pre, tt, kbd, samp {
   100% { background-position: 200% 0; }
 }
 .skeleton {
-  background: linear-gradient(90deg, rgba(30,45,74,0.4) 25%, rgba(30,45,74,0.9) 50%, rgba(30,45,74,0.4) 75%);
+  background: linear-gradient(90deg, var(--border) 25%, var(--card) 50%, var(--border) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
   border-radius: 4px;
@@ -220,6 +226,11 @@ code, pre, tt, kbd, samp {
 .spinner {
   animation: spin 0.7s linear infinite;
   border-radius: 50%;
+}
+
+/* File tree hover - theme aware */
+.file-tree-hover:hover {
+  background: var(--hover-bg);
 }
 
 /* Fade-in */

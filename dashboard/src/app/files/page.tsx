@@ -25,7 +25,7 @@ export default function FilesPage() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string>("");
   const [originalContent, setOriginalContent] = useState<string>("");
-  const [diff, setDiff] = useState<string>("");
+  const [, setDiff] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState("");
@@ -36,6 +36,7 @@ export default function FilesPage() {
 
   const [isMobile, setIsMobile] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const isDragging = useRef(false);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
 
@@ -216,28 +217,28 @@ export default function FilesPage() {
 
   return (
     <div className="h-screen flex flex-col fade-in" style={{ background: "var(--bg)", color: "var(--text)" }}>
-      <div className="flex items-center gap-4 px-4 py-3" style={{ background: "var(--card)", borderBottom: "1px solid var(--border)" }}>
+      <div className="flex items-center gap-2 px-4 py-3 flex-wrap" style={{ background: "var(--card)", borderBottom: "1px solid var(--border)" }}>
         <button
           type="button"
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="md:hidden p-2 rounded"
-          style={{ background: "rgba(30,45,74,.5)" }}
-          aria-label={sidebarOpen ? "Close file tree" : "Open file tree"}
+          onClick={() => isMobile ? setSidebarOpen(!sidebarOpen) : setSidebarCollapsed(!sidebarCollapsed)}
+          className="p-2 rounded flex-none"
+          style={{ background: "var(--btn-bg)", color: "var(--text)", border: "1px solid var(--border)" }}
+          aria-label={isMobile ? (sidebarOpen ? "Close file tree" : "Open file tree") : (sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar")}
         >
-          <svg viewBox="0 0 24 24" fill="none" style={{ width: 20, height: 20 }} aria-hidden="true">
-            {sidebarOpen ? (
+          <svg viewBox="0 0 24 24" fill="none" style={{ width: 18, height: 18 }} aria-hidden="true">
+            {isMobile && sidebarOpen ? (
               <path d="M6 18L18 6M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             ) : (
               <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             )}
           </svg>
         </button>
-        <h1 className="text-lg font-semibold" style={{ color: "var(--text)" }}>File Explorer</h1>
+        <h1 className="text-lg font-semibold flex-none" style={{ color: "var(--text)" }}>File Explorer</h1>
         <select
           value={selectedProjectId}
           onChange={(e) => setSelectedProjectId(e.target.value)}
-          className="px-3 py-1.5 rounded text-sm"
-          style={{ background: "rgba(30,45,74,.5)", borderColor: "var(--border)" }}
+          className="px-3 py-1.5 rounded text-sm flex-none"
+          style={{ background: "var(--btn-bg)", color: "var(--text)", border: "1px solid var(--border)" }}
         >
           {projects.map((p) => (
             <option key={p.id} value={p.id}>
@@ -250,16 +251,16 @@ export default function FilesPage() {
           placeholder="Filter files..."
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="px-3 py-1.5 rounded text-sm flex-1 max-w-xs hidden md:block"
-          style={{ background: "rgba(30,45,74,.5)", borderColor: "var(--border)" }}
+          className="px-3 py-1.5 rounded text-sm flex-1 min-w-0 max-w-xs"
+          style={{ background: "var(--btn-bg)", color: "var(--text)", border: "1px solid var(--border)" }}
         />
         {selectedPath && (
           <>
             <button
               type="button"
               onClick={() => setShowDiff(!showDiff)}
-              className="px-3 py-1.5 rounded text-sm"
-              style={{ background: "rgba(30,45,74,.5)", borderColor: "var(--border)" }}
+              className="px-3 py-1.5 rounded text-sm flex-none"
+              style={{ background: "var(--btn-bg)", color: "var(--text)", border: "1px solid var(--border)" }}
             >
               {showDiff ? "Hide Diff" : "Show Diff"}
             </button>
@@ -267,8 +268,8 @@ export default function FilesPage() {
               <button
                 type="button"
                 onClick={() => setDiffMode(diffMode === "inline" ? "side-by-side" : "inline")}
-                className="px-3 py-1.5 rounded text-sm"
-                style={{ background: "rgba(30,45,74,.5)", borderColor: "var(--border)" }}
+                className="px-3 py-1.5 rounded text-sm flex-none"
+                style={{ background: "var(--btn-bg)", color: "var(--text)", border: "1px solid var(--border)" }}
               >
                 {diffMode === "inline" ? "Side by Side" : "Inline"}
               </button>
@@ -278,11 +279,11 @@ export default function FilesPage() {
                 type="button"
                 onClick={handleSave}
                 disabled={saving}
-                className="px-4 py-1.5 rounded text-sm disabled:opacity-50"
-                style={{ background: "rgba(0,255,136,.2)", color: "var(--green)", border: "1px solid var(--green)" }}
+                className="px-4 py-1.5 rounded text-sm disabled:opacity-50 flex-none"
+                style={{ background: "rgba(0,255,136,.15)", color: "var(--green)", border: "1px solid var(--green)" }}
               >
                 {saving ? (
-                  <span className="spinner w-3 h-3 inline-block" style={{ border: "1.5px solid rgba(0,255,136,0.3)", borderTopColor: "#00ff88" }} />
+                  <span className="spinner w-3 h-3 inline-block" style={{ border: "1.5px solid rgba(0,255,136,0.3)", borderTopColor: "var(--green)" }} />
                 ) : "Save"}
               </button>
             )}
@@ -301,7 +302,7 @@ export default function FilesPage() {
           <span style={{ color: "var(--dim)" }}>No projects found. Add a project from the Dashboard.</span>
         </div>
       ) : (
-        <div className="flex-1 flex overflow-hidden relative">
+        <div className="flex-1 flex overflow-hidden">
           {isMobile && sidebarOpen && (
             <div
               className="fixed inset-0 bg-black/50 z-40"
@@ -314,27 +315,16 @@ export default function FilesPage() {
           )}
 
           <div
-            className="flex-none h-full flex flex-col border-r overflow-hidden"
+            className="flex-none h-full flex flex-col overflow-hidden"
             style={{
-              width: isMobile ? (sidebarOpen ? "280px" : "0") : `${sidebarWidth}px`,
-              borderColor: "var(--border)",
-              transition: isMobile ? "width 0.2s ease" : "none",
+              width: isMobile
+                ? (sidebarOpen ? "280px" : "0")
+                : (sidebarCollapsed ? "0" : `${sidebarWidth}px`),
+              borderRight: "1px solid var(--border)",
+              transition: isMobile || sidebarCollapsed ? "width 0.2s ease" : "none",
               flexShrink: 0,
             }}
           >
-            {!isMobile && (
-              <div
-                onMouseDown={startDrag}
-                className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-cyan-500/50 active:bg-cyan-500/70 z-10"
-                style={{ background: "var(--border)" }}
-                role="slider"
-                aria-label="Resize sidebar"
-                aria-valuemin={SIDEBAR_MIN_WIDTH}
-                aria-valuemax={SIDEBAR_MAX_WIDTH}
-                aria-valuenow={sidebarWidth}
-                tabIndex={0}
-              />
-            )}
             <div className="flex-1 overflow-auto p-2">
               {loading && tree.length === 0 ? (
                 <div className="flex flex-col gap-2 p-2">
@@ -349,6 +339,22 @@ export default function FilesPage() {
               )}
             </div>
           </div>
+
+          {!isMobile && !sidebarCollapsed && (
+            <div
+              onMouseDown={startDrag}
+              className="w-1 flex-none h-full cursor-col-resize z-10 transition-colors"
+              style={{ background: "var(--border)" }}
+              onMouseOver={(e) => { (e.currentTarget as HTMLDivElement).style.background = "var(--cyan)"; }}
+              onMouseOut={(e) => { (e.currentTarget as HTMLDivElement).style.background = "var(--border)"; }}
+              role="slider"
+              aria-label="Resize sidebar"
+              aria-valuemin={SIDEBAR_MIN_WIDTH}
+              aria-valuemax={SIDEBAR_MAX_WIDTH}
+              aria-valuenow={sidebarWidth}
+              tabIndex={0}
+            />
+          )}
 
           <div className="flex-1 flex overflow-hidden">
             <div

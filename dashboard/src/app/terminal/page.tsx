@@ -127,10 +127,10 @@ export default function TerminalPage() {
   };
 
   return (
-    <div className="flex flex-col bg-background fade-in" style={{ height: "100dvh" }}>
-      <div className="flex flex-col gap-2 px-3 py-2 bg-muted border-b border-border sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col fade-in" style={{ height: "calc(100dvh - 3.5rem)", background: "var(--bg)" }}>
+      <div className="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:justify-between" style={{ background: "var(--card)", borderBottom: "1px solid var(--border)" }}>
         <div className="flex items-center gap-3 min-w-0">
-          <span className="text-sm text-foreground truncate">
+          <span className="text-sm truncate" style={{ color: "var(--text)" }}>
             Terminal {session ? `(${session.tmuxSession})` : ""}
           </span>
           {session ? (
@@ -160,7 +160,8 @@ export default function TerminalPage() {
           <button
             type="button"
             onClick={openFullTerminal}
-            className="flex-1 sm:flex-none px-3 py-1.5 text-sm bg-muted text-white rounded hover:bg-muted/80 whitespace-nowrap"
+            className="flex-1 sm:flex-none px-3 py-1.5 text-sm rounded whitespace-nowrap"
+            style={{ background: "var(--btn-bg)", color: "var(--text)", border: "1px solid var(--border)" }}
           >
             <span className="hidden sm:inline">Open Full Terminal</span>
             <span className="sm:hidden">Full</span>
@@ -179,7 +180,7 @@ export default function TerminalPage() {
         <div className="px-4 py-2 bg-destructive text-white text-sm">{error}</div>
       )}
 
-      <div ref={terminalRef} className="flex-1 overflow-hidden p-1" />
+      <div ref={terminalRef} className="flex-1 overflow-hidden" />
     </div>
   );
 }
