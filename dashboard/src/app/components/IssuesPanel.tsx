@@ -62,12 +62,13 @@ interface ProjectIssues {
   error: string | null;
 }
 
-interface ProjectPanelProps {
-  projectIssues: ProjectIssues;
+interface ProjectPanelProps {projectIssues: ProjectIssues;
   isExpanded: boolean;
   onToggle: () => void;
   onAddToQueue?: (issue: GitHubIssue, repoOwner: string, repoName: string) => void;
   addingIssueId?: number | null;
+  onAddMilestoneToQueue?: (issues: GitHubIssue[], repoOwner: string, repoName: string) => void;
+  addingMilestoneId?: number | null;
 }
 
 function ProjectPanel({
@@ -76,6 +77,8 @@ function ProjectPanel({
   onToggle,
   onAddToQueue,
   addingIssueId,
+  onAddMilestoneToQueue,
+  addingMilestoneId,
 }: ProjectPanelProps) {
   const { project, data, loading, error } = projectIssues;
   const totalIssues = data
@@ -182,6 +185,8 @@ function ProjectPanel({
                   repoName={data.repo}
                   onAddToQueue={onAddToQueue}
                   addingIssueId={addingIssueId}
+                  onAddMilestoneToQueue={onAddMilestoneToQueue}
+                  addingMilestoneId={addingMilestoneId}
                 />
               ))}
 
@@ -205,6 +210,8 @@ function ProjectPanel({
                   repoName={data.repo}
                   onAddToQueue={onAddToQueue}
                   addingIssueId={addingIssueId}
+                  onAddMilestoneToQueue={onAddMilestoneToQueue}
+                  addingMilestoneId={addingMilestoneId}
                 />
               )}
 
@@ -227,11 +234,14 @@ interface MilestoneSectionProps {
   repoName: string;
   onAddToQueue?: (issue: GitHubIssue, repoOwner: string, repoName: string) => void;
   addingIssueId?: number | null;
+  onAddMilestoneToQueue?: (issues: GitHubIssue[], repoOwner: string, repoName: string) => void;
+  addingMilestoneId?: number | null;
 }
 
-function MilestoneSection({ milestoneGroup, repoOwner, repoName, onAddToQueue, addingIssueId }: MilestoneSectionProps) {
+function MilestoneSection({ milestoneGroup, repoOwner, repoName, onAddToQueue, addingIssueId, onAddMilestoneToQueue, addingMilestoneId }: MilestoneSectionProps) {
   const [expanded, setExpanded] = useState(true);
   const { milestone, issues } = milestoneGroup;
+  const isAddingMilestone = addingMilestoneId === milestone.id;
 
   return (
     <div className="rounded overflow-hidden" style={{ border: "1px solid rgba(30,45,74,0.5)" }}>
@@ -265,16 +275,44 @@ function MilestoneSection({ milestoneGroup, repoOwner, repoName, onAddToQueue, a
             </span>
           )}
         </div>
-        <span
-          className="text-xs px-1.5 py-0.5 rounded"
+        <div className="flex items-center gap-2">
+          <span
+            className="text-xs px-1.5 py-0.5 rounded"
+            style={{
+              background: "rgba(168,85,247,0.15)",
+              color: "#a855f7",
+            }}
+          >
+            {issues.length}
+          </span>
+        </div>
+      </button>
+
+      {onAddMilestoneToQueue && issues.length > 0 && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAddMilestoneToQueue(issues, repoOwner, repoName);
+          }}
+          disabled={isAddingMilestone}
+          className="w-full text-left px-3 py-1.5 text-xs transition-colors hover:bg-white/5 disabled:opacity-50"
           style={{
-            background: "rgba(168,85,247,0.15)",
-            color: "#a855f7",
+            background: "transparent",
+            color: "#00ff88",
+            borderTop: "1px solid rgba(30,45,74,0.5)",
           }}
         >
-          {issues.length}
-        </span>
-      </button>
+          {isAddingMilestone ? (
+            <span className="flex items-center gap-2">
+              <span className="spinner w-3 h-3 inline-block" style={{ border: "1.5px solid rgba(0,255,136,0.3)", borderTopColor: "#00ff88" }} />
+              Adding {issues.length} issues to queue...
+            </span>
+          ) : (
+            <span>+ Queue all {issues.length} issue{issues.length !== 1 ? "s" : ""}</span>
+          )}
+        </button>
+      )}
 
       {expanded && (
         <div className="space-y-1 p-2">
@@ -352,7 +390,7 @@ function IssueRow({ issue, repoOwner, repoName, onAddToQueue, adding }: IssueRow
             onAddToQueue(issue, repoOwner, repoName);
           }}
           disabled={adding}
-          className="text-xs px-2 py-1 rounded flex-shrink-0 transition-opacity opacity-0 group-hover:opacity-100 disabled:opacity-50"
+          className="text-xs px-2 py-1 rounded flex-shrink-0 disabled:opacity-50"
           style={{
             background: "rgba(0,255,136,0.1)",
             color: "#00ff88",
@@ -373,9 +411,11 @@ interface IssuesPanelProps {
   refreshToken?: number;
   onAddToQueue?: (issue: GitHubIssue, repoOwner: string, repoName: string) => void;
   addingIssueId?: number | null;
+  onAddMilestoneToQueue?: (issues: GitHubIssue[], repoOwner: string, repoName: string) => void;
+  addingMilestoneId?: number | null;
 }
 
-export default function IssuesPanel({ refreshToken, onAddToQueue, addingIssueId }: IssuesPanelProps) {
+export default function IssuesPanel({ refreshToken, onAddToQueue, addingIssueId, onAddMilestoneToQueue, addingMilestoneId }: IssuesPanelProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [issuesData, setIssuesData] = useState<Map<string, ProjectIssues>>(new Map());
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
@@ -549,6 +589,8 @@ export default function IssuesPanel({ refreshToken, onAddToQueue, addingIssueId 
             onToggle={() => toggleProject(project.id)}
             onAddToQueue={onAddToQueue}
             addingIssueId={addingIssueId}
+            onAddMilestoneToQueue={onAddMilestoneToQueue}
+            addingMilestoneId={addingMilestoneId}
           />
         ))}
     </div>

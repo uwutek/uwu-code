@@ -102,6 +102,50 @@ Tasks created in `/scheduler`. Supported types:
 
 Tool preference per coding task: **Auto** (tries opencode → claude), **Claude Code**, or **OpenCode**.
 
+## MCP Integration
+
+uwu-code includes an MCP (Model Context Protocol) server for the Scheduler, enabling AI tools like OpenCode to programmatically manage tasks.
+
+### MCP Server Tools
+
+| Tool | Description |
+|------|-------------|
+| `scheduler_list_tasks` | List all tasks, optionally filter by status or type |
+| `scheduler_create_task` | Create a new coding or research task |
+| `scheduler_get_task` | Get details of a specific task |
+| `scheduler_update_task` | Update task properties (status, schedule, etc.) |
+| `scheduler_delete_task` | Delete a task from the queue |
+| `scheduler_queue_now` | Immediately queue a task for execution |
+| `scheduler_get_status` | Get openclaw agent status |
+| `scheduler_get_agent_logs` | Read recent agent logs |
+
+### MCP Configuration
+
+For OpenCode, add to your `opencode.json`:
+
+```json
+{
+  "mcpServers": {
+    "uwu-scheduler": {
+      "command": "npx",
+      "args": ["tsx", "dashboard/mcp-scheduler-server.ts"]
+    }
+  }
+}
+```
+
+Or use the global MCP config at `.mcp/config.json`.
+
+### Usage Example
+
+```bash
+# Run opencode with the scheduler MCP server
+opencode --mcp-config opencode.json
+
+# Or in opencode's interactive mode:
+# The scheduler tools will be available to create and manage tasks
+```
+
 ## Settings
 
 Visit `/settings` to:

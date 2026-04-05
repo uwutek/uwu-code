@@ -4,11 +4,48 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import { spawn } from "child_process";
 
 const DATA_DIR = path.join(process.cwd(), "..", "openclaw", "data");
 const TASKS_FILE = path.join(DATA_DIR, "tasks.json");
+// Repo root: dashboard/../ so that spawned `claude` picks up .mcp/config.json
+const REPO_ROOT = path.resolve(process.cwd(), "..");
 
-type TaskStatus = "pending" | "running" | "completed" | "failed" | "scheduled" | "manual";
+function buildPrompt(task: Task): string {
+  if (task.type === "coding") {
+    const ws = task.workspace || "/opt/workspaces";
+    return (
+      `You are executing scheduled coding task "${task.title}".\n\n` +
+      `Description: ${task.description}\n` +
+      `Target workspace: ${ws}\n\n` +
+      `Use your tools (Bash, Edit, Write, etc.) to complete this task fully in the target workspace.\n\n` +
+      `When done, call scheduler_update_task MCP tool: task_id="${task.id}", ` +
+      `status="completed" or "failed", report=<summary>, ` +
+      `completed_at=<ISO timestamp>, last_run_at=<ISO timestamp>, last_run_status="completed" or "failed".`
+    );
+  }
+  return (
+    `You are executing scheduled research task "${task.title}".\n\n` +
+    `Task: ${task.description}\n\n` +
+    `Research and answer this thoroughly. Use WebSearch or WebFetch if helpful.\n\n` +
+    `When done, call scheduler_update_task MCP tool: task_id="${task.id}", ` +
+    `status="completed" or "failed", report=<findings>, ` +
+    `completed_at=<ISO timestamp>, last_run_at=<ISO timestamp>, last_run_status="completed" or "failed".`
+  );
+}
+
+function spawnTask(task: Task) {
+  const prompt = buildPrompt(task);
+  const child = spawn(
+    "claude",
+    ["--dangerously-skip-permissions", "-p", prompt],
+    { cwd: REPO_ROOT, detached: true, stdio: "ignore" }
+  );
+  child.unref();
+  return child.pid;
+}
+
+type TaskStatus = "pending" | "running" | "completed" | "failed" | "scheduled" | "manual" | "rate_limited";
 type ScheduleMode = "anytime" | "once" | "daily" | "weekly" | "manual";
 
 function ensureDir() {
@@ -32,6 +69,7 @@ export interface Task {
   completed_at?: string;
   last_run_at?: string;
   last_run_status?: "completed" | "failed";
+  retry_at?: string;
   report?: string;
 }
 
@@ -186,6 +224,18 @@ export async function POST(req: NextRequest) {
     scheduled_at: initialScheduledAt,
     created_at: new Date().toISOString(),
   };
+
+  // For anytime tasks: spawn claude immediately — description is the prompt.
+  // No openclaw daemon needed.
+  if (mode === "anytime") {
+    task.status = "running";
+    task.started_at = new Date().toISOString();
+    const tasks = loadTasks();
+    tasks.push(task);
+    saveTasks(tasks);
+    spawnTask(task);
+    return NextResponse.json({ task }, { status: 201 });
+  }
 
   const tasks = loadTasks();
   tasks.push(task);

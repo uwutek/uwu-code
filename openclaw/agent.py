@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
-openclaw — autonomous task agent for uwu-code
+openclaw — scheduler agent for uwu-code
 Polls data/tasks.json every 10s.
-- coding tasks  → opencode or claude CLI in the workspace
+- coding tasks  → prompts passed directly to opencode or claude CLI in the workspace
 - research tasks → Anthropic / OpenAI / OpenRouter API directly
-Rate-limit detection auto-reschedules the task 1 hour out.
+Rate-limit/usage-limit → auto-reschedules the task 1 hour out and retries.
+No intermediate agent layer: prompts are built programmatically and sent straight
+to the tool (opencode / claude code) or the API.
 """
 from __future__ import annotations
 
@@ -593,18 +595,23 @@ def get_next_task(tasks: list[TaskDict]) -> TaskDict | None:
             t = parse_iso_datetime(task.get("scheduled_at"))
             if t and t <= now:
                 return task
+        if task["status"] == "rate_limited":
+            t = parse_iso_datetime(task.get("retry_at"))
+            if t and t <= now:
+                return task
     return None
 
 
 # ── executors ────────────────────────────────────────────────────────────────
 
-def run_coding_task(task: TaskDict) -> tuple[bool | None, str]:
+def run_coding_task(task: TaskDict, is_retry: bool = False) -> tuple[bool | None, str]:
     """
     Returns (True, output) on success, (False, output) on failure,
     (None, output) if rate-limited.
+    When is_retry=True (previously rate-limited), sends 'continue' to resume.
     """
     workspace = task.get("workspace") or "/opt/workspaces"
-    desc = task["description"]
+    desc = "continue" if is_retry else task["description"]
     pref = task.get("preferred_tool", "auto")
 
     # Build ordered list of commands to try
@@ -730,14 +737,16 @@ def run_research_task(task: TaskDict) -> tuple[bool | None, str]:
 def process_task(task: TaskDict) -> None:
     tid = task["id"]
     schedule_mode = task.get("schedule_mode", "anytime")
-    log(f"Starting task [{tid}] type={task.get('type','research')}: {task['description'][:80]}")
+    is_retry = task.get("status") == "rate_limited"
+    action = "Retrying (continue)" if is_retry else "Starting"
+    log(f"{action} task [{tid}] type={task.get('type','research')}: {task['description'][:80]}")
 
     update_task(tid, status="running", started_at=now_iso())
     update_status("running", tid, task["description"][:120])
 
     try:
         if task.get("type") == "coding":
-            result, output = run_coding_task(task)
+            result, output = run_coding_task(task, is_retry=is_retry)
         else:
             result, output = run_research_task(task)
     except Exception as e:
@@ -757,30 +766,20 @@ def process_task(task: TaskDict) -> None:
     header += f"**Completed:** {now_iso()}  \n\n---\n\n"
 
     if result is None:
+        retry_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
         rate_limited_report = (
-            f"{header}⏳ Rate limited.\n\n"
+            f"{header}⏳ Rate limited — will retry with `continue` at **{retry_at}**.\n\n"
             f"API response:\n```\n{output[:2000]}\n```"
         )
-        if schedule_mode == "manual":
-            update_task(
-                tid,
-                status="manual",
-                last_run_at=now_iso(),
-                last_run_status="failed",
-                report=rate_limited_report,
-            )
-            log("  Rate limited (manual task remains manual)")
-        else:
-            scheduled = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-            update_task(
-                tid,
-                status="scheduled",
-                scheduled_at=scheduled,
-                last_run_at=now_iso(),
-                last_run_status="failed",
-                report=f"{rate_limited_report}\n\nAuto-rescheduled for **{scheduled}**.",
-            )
-            log(f"  Rate limited → rescheduled to {scheduled}")
+        update_task(
+            tid,
+            status="rate_limited",
+            retry_at=retry_at,
+            last_run_at=now_iso(),
+            last_run_status="failed",
+            report=rate_limited_report,
+        )
+        log(f"  Rate limited → will send 'continue' at {retry_at}")
     elif result:
         next_run = compute_next_recurring_run(task, datetime.now(timezone.utc))
         if schedule_mode == "manual":

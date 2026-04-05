@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "uwu-scheduler": {
+      "command": "npx",
+      "args": ["tsx", "dashboard/mcp-scheduler-server.ts"],
+      "env": {
+        "NODE_ENV": "production"
+      },
+      "description": "uwu-code Scheduler MCP server - manage AI task queue, create coding/research tasks, check agent status"
+    }
+  }
+}

@@ -511,10 +511,7 @@ interface ORModel {
   prompt_price_per_m: number;
 }
 
-interface AgentModelOption {
-  id: string;
-  name: string;
-}
+interface SimpleModel { id: string; name: string }
 
 const DEFAULT_OPENCLAW_MODEL = "openrouter/free";
 
@@ -646,9 +643,127 @@ function ModelPicker({
   );
 }
 
+function SimpleModelPicker({
+  label,
+  hint,
+  value,
+  onChange,
+  models,
+  loading,
+  accentColor,
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  onChange: (id: string) => void;
+  models: SimpleModel[];
+  loading: boolean;
+  accentColor?: string;
+}) {
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const accent = accentColor ?? "#00d4ff";
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const selected = models.find((m) => m.id === value);
+  const filtered = models.filter(
+    (m) =>
+      m.id.toLowerCase().includes(search.toLowerCase()) ||
+      m.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-medium" style={{ color: "#94a3b8" }}>{label}</label>
+      {hint && <div className="text-xs" style={{ color: "#2e4a7a" }}>{hint}</div>}
+      <div ref={ref} className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs text-left"
+          style={{ ...INPUT, fontFamily: "monospace" }}
+          disabled={loading}
+        >
+          <span className="flex items-center gap-2 min-w-0">
+            {loading ? (
+              <span className="spinner w-3 h-3 inline-block flex-shrink-0" style={{ border: `1.5px solid rgba(0,212,255,0.2)`, borderTopColor: accent }} />
+            ) : selected ? (
+              <span className="truncate" style={{ color: "#e2e8f0" }}>{selected.name}</span>
+            ) : (
+              <span style={{ color: "#4a5568" }}>{value || "Select model…"}</span>
+            )}
+          </span>
+          <svg className="w-3 h-3 flex-shrink-0 ml-2" style={{ color: "#4a5568" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+
+        {open && (
+          <div
+            className="absolute z-50 left-0 right-0 mt-1 rounded-lg overflow-hidden"
+            style={{ background: "#0f1629", border: "1px solid #1e2d4a", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", maxHeight: "320px", display: "flex", flexDirection: "column" }}
+          >
+            <div className="p-2 border-b" style={{ borderColor: "#1e2d4a" }}>
+              <input
+                autoFocus
+                type="text"
+                placeholder="Search models…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full px-2 py-1.5 rounded text-xs outline-none"
+                style={{ background: "rgba(30,45,74,0.6)", color: "#e2e8f0", border: "1px solid #1e2d4a" }}
+              />
+            </div>
+            <div className="overflow-y-auto" style={{ maxHeight: "260px" }}>
+              {filtered.length === 0 ? (
+                <div className="px-3 py-4 text-xs text-center" style={{ color: "#4a5568" }}>No models found</div>
+              ) : (
+                filtered.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => { onChange(m.id); setOpen(false); setSearch(""); }}
+                    className="w-full flex items-center justify-between px-3 py-2.5 text-left transition-colors"
+                    style={{
+                      background: m.id === value ? `rgba(0,212,255,0.08)` : "transparent",
+                      borderLeft: m.id === value ? `2px solid ${accent}` : "2px solid transparent",
+                    }}
+                    onMouseEnter={(e) => { if (m.id !== value) e.currentTarget.style.background = "rgba(30,45,74,0.5)"; }}
+                    onMouseLeave={(e) => { if (m.id !== value) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <span className="text-xs font-medium truncate" style={{ color: "#e2e8f0" }}>{m.name}</span>
+                      <span className="text-xs font-mono truncate" style={{ color: "#4a5568" }}>{m.id}</span>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+      {selected && (
+        <div className="text-xs font-mono" style={{ color: "#2e4a7a" }}>{selected.id}</div>
+      )}
+    </div>
+  );
+}
+
 function ModelsSection() {
   const [models, setModels] = useState<ORModel[]>([]);
+  const [opencodeModels, setOpencodeModels] = useState<SimpleModel[]>([]);
+  const [claudeCodeModels, setClaudeCodeModels] = useState<SimpleModel[]>([]);
   const [openclawModel, setOpenclawModel] = useState(DEFAULT_OPENCLAW_MODEL);
+  const [opencodeModel, setOpencodeModel] = useState("");
+  const [claudecodeModel, setClaudecodeModel] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -659,7 +774,11 @@ function ModelsSection() {
       .then((r) => r.json())
       .then((d) => {
         setModels(d.models ?? []);
+        setOpencodeModels(d.opencodeModels ?? []);
+        setClaudeCodeModels(d.claudeCodeModels ?? []);
         if (d.selected?.openclaw) setOpenclawModel(d.selected.openclaw);
+        if (d.selected?.opencode) setOpencodeModel(d.selected.opencode);
+        if (d.selected?.claudecode) setClaudecodeModel(d.selected.claudecode);
         if (d.error) setError(d.error);
       })
       .catch(() => setError("Failed to load models"))
@@ -672,7 +791,7 @@ function ModelsSection() {
       const res = await fetch("/api/settings/models", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ openclaw: openclawModel }),
+        body: JSON.stringify({ openclaw: openclawModel, opencode: opencodeModel, claudecode: claudecodeModel }),
       });
       if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 3000); }
       else { const d = await res.json(); setError(d.error ?? "Save failed"); }
@@ -692,9 +811,9 @@ function ModelsSection() {
       }
     >
       <p className="text-xs" style={{ color: "#4a5568" }}>
-        Choose which model OpenClaw uses for chat and research.
+        Choose the default model for each tool. OpenClaw uses OpenRouter; OpenCode and Claude Code read from their config files.
         {!loading && models.length > 0 && (
-          <span> Showing <strong style={{ color: "#00ff88" }}>{freeCount} free</strong> and <strong style={{ color: "#94a3b8" }}>{models.length - freeCount} paid</strong> models.</span>
+          <span> OpenClaw: <strong style={{ color: "#00ff88" }}>{freeCount} free</strong> / <strong style={{ color: "#94a3b8" }}>{models.length - freeCount} paid</strong>.</span>
         )}
       </p>
 
@@ -712,6 +831,30 @@ function ModelsSection() {
           models={models}
           loading={loading}
         />
+
+        <div style={{ borderTop: "1px solid #1e2d4a", paddingTop: "1rem" }}>
+          <SimpleModelPicker
+            label="OpenCode — default model"
+            hint={`Writes to ~/.config/opencode/opencode.json. ${opencodeModels.length} models available.`}
+            value={opencodeModel}
+            onChange={setOpencodeModel}
+            models={opencodeModels}
+            loading={loading}
+            accentColor="#a855f7"
+          />
+        </div>
+
+        <div style={{ borderTop: "1px solid #1e2d4a", paddingTop: "1rem" }}>
+          <SimpleModelPicker
+            label="Claude Code — default model"
+            hint="Writes to ~/.claude/settings.json."
+            value={claudecodeModel}
+            onChange={setClaudecodeModel}
+            models={claudeCodeModels}
+            loading={loading}
+            accentColor="#00ff88"
+          />
+        </div>
       </div>
 
       {saved && (

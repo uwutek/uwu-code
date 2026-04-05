@@ -12,7 +12,7 @@ interface Task {
   description: string;
   workspace?: string;
   preferred_tool?: "claude" | "opencode" | "auto";
-  status: "pending" | "running" | "completed" | "failed" | "scheduled" | "manual";
+  status: "pending" | "running" | "completed" | "failed" | "scheduled" | "manual" | "rate_limited";
   schedule_mode?: "anytime" | "once" | "daily" | "weekly" | "manual";
   schedule_time?: string;
   schedule_weekday?: number;
@@ -22,6 +22,7 @@ interface Task {
   completed_at?: string;
   last_run_at?: string;
   last_run_status?: "completed" | "failed";
+  retry_at?: string;
   report?: string;
 }
 
@@ -51,21 +52,23 @@ function fmtDate(iso?: string) {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  pending:   "#ffd700",
-  running:   "#00d4ff",
-  completed: "#00ff88",
-  failed:    "#ff4444",
-  scheduled: "#a855f7",
-  manual:    "#f97316",
+  pending:      "#ffd700",
+  running:      "#00d4ff",
+  completed:    "#00ff88",
+  failed:       "#ff4444",
+  scheduled:    "#a855f7",
+  manual:       "#f97316",
+  rate_limited: "#fb923c",
 };
 
 const STATUS_BG: Record<string, string> = {
-  pending:   "rgba(255,215,0,0.1)",
-  running:   "rgba(0,212,255,0.1)",
-  completed: "rgba(0,255,136,0.1)",
-  failed:    "rgba(255,68,68,0.1)",
-  scheduled: "rgba(168,85,247,0.1)",
-  manual:    "rgba(249,115,22,0.1)",
+  pending:      "rgba(255,215,0,0.1)",
+  running:      "rgba(0,212,255,0.1)",
+  completed:    "rgba(0,255,136,0.1)",
+  failed:       "rgba(255,68,68,0.1)",
+  scheduled:    "rgba(168,85,247,0.1)",
+  manual:       "rgba(249,115,22,0.1)",
+  rate_limited: "rgba(251,146,60,0.1)",
 };
 
 const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -117,7 +120,7 @@ function ReportModal({ task, onClose }: { task: Task; onClose: () => void }) {
                 border: `1px solid ${STATUS_COLOR[task.status]}40`,
               }}
             >
-              {task.status}
+              {task.status.replace("_", " ")}
             </span>
             <span className="font-semibold text-sm truncate" style={{ color: "#e2e8f0" }}>
               {task.title}
@@ -187,7 +190,7 @@ function TaskCard({
 }) {
   const color = STATUS_COLOR[task.status] ?? "#94a3b8";
   const bg    = STATUS_BG[task.status]    ?? "rgba(30,45,74,0.2)";
-  const isActive = ["pending", "running", "scheduled"].includes(task.status);
+  const isActive = ["pending", "running", "scheduled", "rate_limited"].includes(task.status);
 
   return (
     <div
@@ -214,7 +217,7 @@ function TaskCard({
             className="text-xs px-2 py-0.5 rounded font-medium uppercase tracking-wider"
             style={{ background: bg, color, border: `1px solid ${color}40` }}
           >
-            {task.status}
+            {task.status.replace("_", " ")}
           </span>
           {/* Type badge */}
           <span
@@ -250,6 +253,9 @@ function TaskCard({
         {task.status === "scheduled" && task.scheduled_at && (
           <span style={{ color: "#a855f7" }}>next run {fmtDate(task.scheduled_at)}</span>
         )}
+        {task.status === "rate_limited" && task.retry_at && (
+          <span style={{ color: "#fb923c" }}>⏳ retry {fmtDate(task.retry_at)}</span>
+        )}
         {task.status === "manual" && task.last_run_at && (
           <span style={{ color: task.last_run_status === "failed" ? "#ff4444" : "#00ff88" }}>
             last run {timeAgo(task.last_run_at)}
@@ -284,7 +290,7 @@ function TaskCard({
             View Report
           </button>
         )}
-        {(task.status === "failed" || task.status === "scheduled" || task.status === "manual") && (
+        {["failed", "scheduled", "manual", "rate_limited"].includes(task.status) && (
           <button
             onClick={onQueueNow}
             type="button"
@@ -295,7 +301,7 @@ function TaskCard({
               border: "1px solid rgba(255,215,0,0.2)",
             }}
           >
-            {task.status === "manual" ? "Add to Queue" : "Queue Now"}
+            {task.status === "manual" ? "Add to Queue" : task.status === "rate_limited" ? "Force Retry" : "Queue Now"}
           </button>
         )}
         <button
@@ -737,7 +743,7 @@ function NewTaskForm({
           style={{ ...INPUT, minHeight: "100px", resize: "vertical" }}
           placeholder={
             type === "coding"
-              ? "Describe the coding task in detail. openclaw will use opencode or claude code to complete it."
+              ? "Describe the coding task in detail. The scheduler passes this prompt directly to opencode or claude code."
               : "Ask a question, request research, or describe what you need to know."
           }
           value={description}
@@ -884,6 +890,7 @@ export default function SchedulerPage() {
   const [showForm, setShowForm]   = useState(false);
   const [report, setReport]       = useState<Task | null>(null);
   const [addingIssueId, setAddingIssueId] = useState<number | null>(null);
+  const [addingMilestoneId, setAddingMilestoneId] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchTasks = useCallback(async () => {
@@ -904,7 +911,7 @@ export default function SchedulerPage() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [fetchTasks]);
 
-  const handleAddIssueToQueue = useCallback(async (issue: GitHubIssueForQueue, repoOwner: string, repoName: string) => {
+  const handleAddIssueToQueue = useCallback(async (issue: GitHubIssueForQueue, _repoOwner: string, _repoName: string) => {
     setAddingIssueId(issue.id);
     try {
       const description = `GitHub Issue #${issue.number}: ${issue.title}\n\n${issue.html_url}`;
@@ -930,6 +937,42 @@ export default function SchedulerPage() {
     }
   }, [fetchTasks]);
 
+  const handleAddMilestoneToQueue = useCallback(async (issues: GitHubIssueForQueue[], _repoOwner: string, _repoName: string) => {
+    if (issues.length === 0) return;
+    const milestoneTitle = issues[0]?.milestone?.title ?? "No Milestone";
+    setAddingMilestoneId(Date.now());
+    try {
+      const results = await Promise.allSettled(
+        issues.map(async (issue) => {
+          const description = `GitHub Issue #${issue.number}: ${issue.title}\n\n${issue.html_url}`;
+          const res = await fetch("/api/scheduler/tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type: "coding",
+              title: issue.title,
+              description,
+              schedule_mode: "anytime",
+            }),
+          });
+          if (!res.ok) {
+            const data = await res.json();
+            throw new Error(data.error || "Failed to create task");
+          }
+        })
+      );
+      const failedCount = results.filter(r => r.status === "rejected").length;
+      if (failedCount > 0) {
+        console.error(`Failed to create ${failedCount} tasks out of ${issues.length}`);
+      }
+      fetchTasks();
+    } catch (err) {
+      console.error("Failed to add milestone to queue:", err);
+    } finally {
+      setAddingMilestoneId(null);
+    }
+  }, [fetchTasks]);
+
   async function deleteTask(id: string) {
     await fetch(`/api/scheduler/tasks/${id}`, { method: "DELETE" });
     fetchTasks();
@@ -944,7 +987,7 @@ export default function SchedulerPage() {
     fetchTasks();
   }
 
-  const active    = tasks.filter((t) => ["pending", "running", "scheduled", "manual"].includes(t.status));
+  const active    = tasks.filter((t) => ["pending", "running", "scheduled", "manual", "rate_limited"].includes(t.status));
   const completed = tasks.filter((t) => ["completed", "failed"].includes(t.status));
 
   const pending  = active.filter((t) => t.status === "pending").length;
@@ -974,7 +1017,7 @@ export default function SchedulerPage() {
           </div>
           <div>
             <h1 className="text-lg font-bold" style={{ color: "#ffd700" }}>Scheduler</h1>
-            <p className="text-xs" style={{ color: "#4a5568" }}>Tasks queued for openclaw</p>
+            <p className="text-xs" style={{ color: "#4a5568" }}>Runs <span style={{ color: "#00d4ff" }}>claude code</span> directly — no daemon required</p>
           </div>
         </div>
 
@@ -1026,7 +1069,12 @@ export default function SchedulerPage() {
       )}
 
       {/* Git Issues Panel */}
-      <IssuesPanel onAddToQueue={handleAddIssueToQueue} addingIssueId={addingIssueId} />
+      <IssuesPanel 
+        onAddToQueue={handleAddIssueToQueue} 
+        addingIssueId={addingIssueId}
+        onAddMilestoneToQueue={handleAddMilestoneToQueue}
+        addingMilestoneId={addingMilestoneId}
+      />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b overflow-x-auto" style={{ borderColor: "#1e2d4a" }}>

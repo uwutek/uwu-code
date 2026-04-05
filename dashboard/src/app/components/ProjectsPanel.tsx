@@ -239,6 +239,44 @@ export default function ProjectsPanel({ data, onRefresh }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [showCloneForm, setShowCloneForm] = useState(false);
   const [deletingPath, setDeletingPath] = useState<string | null>(null);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoverMsg, setDiscoverMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const handleDiscover = async () => {
+    setDiscovering(true);
+    setDiscoverMsg(null);
+    try {
+      const res = await fetch("/api/projects/discover");
+      const result = await res.json();
+      
+      if (result.untrackedCount > 0) {
+        const paths = result.untracked.map((p: { path: string }) => p.path);
+        const importRes = await fetch("/api/projects/discover", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paths }),
+        });
+        const importResult = await importRes.json();
+        
+        if (importResult.importedCount > 0) {
+          setDiscoverMsg({
+            type: "success",
+            text: `Imported ${importResult.importedCount} repository${importResult.importedCount > 1 ? "ies" : ""}`,
+          });
+          onRefresh();
+        } else {
+          setDiscoverMsg({ type: "error", text: importResult.errors?.[0]?.error || "Import failed" });
+        }
+      } else {
+        setDiscoverMsg({ type: "success", text: "No new repositories found" });
+      }
+    } catch {
+      setDiscoverMsg({ type: "error", text: "Failed to discover repositories" });
+    } finally {
+      setDiscovering(false);
+      setTimeout(() => setDiscoverMsg(null), 4000);
+    }
+  };
 
   const handleDeleteProject = async (projectPath: string, projectName: string) => {
     if (deletingPath) return;
@@ -336,6 +374,37 @@ export default function ProjectsPanel({ data, onRefresh }: Props) {
             Clone Project
           </button>
 
+
+          <button
+            type="button"
+            onClick={handleDiscover}
+            disabled={discovering}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-all"
+            style={{
+              background: discovering
+                ? "rgba(139, 92, 246, 0.1)"
+                : "rgba(139, 92, 246, 0.08)",
+              border: "1px solid rgba(139, 92, 246, 0.3)",
+              color: discovering ? "#a78bfa" : "#8b5cf6",
+              cursor: discovering ? "not-allowed" : "pointer",
+            }}
+            title="Scan /opt/workspaces for existing repositories"
+          >
+            {discovering ? (
+              <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <title>Scanning</title>
+                <path d="M21 12a9 9 0 1 1-9-9" />
+              </svg>
+            ) : (
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <title>Discover</title>
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.35-4.35" />
+              </svg>
+            )}
+            Discover
+          </button>
+
           {/* Collapse toggle */}
           <button
             type="button"
@@ -377,6 +446,20 @@ export default function ProjectsPanel({ data, onRefresh }: Props) {
         />
       )}
 
+      {discoverMsg && (
+        <div
+          className="text-xs px-3 py-2 rounded"
+          style={{
+            background: discoverMsg.type === "success"
+              ? "rgba(0, 255, 136, 0.1)"
+              : "rgba(255, 68, 68, 0.1)",
+            color: discoverMsg.type === "success" ? "#00ff88" : "#ff4444",
+            border: `1px solid ${discoverMsg.type === "success" ? "rgba(0, 255, 136, 0.2)" : "rgba(255, 68, 68, 0.2)"}`,
+          }}
+        >
+          {discoverMsg.text}
+        </div>
+      )}
 
       {/* Content */}
       {!collapsed && (

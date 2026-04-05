@@ -15,6 +15,8 @@ export interface Settings {
   github_token?: string;
   models?: {
     openclaw?: string;
+    opencode?: string;
+    claudecode?: string;
   };
 }
 
