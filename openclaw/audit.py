@@ -61,14 +61,14 @@ def log_task_created(
 
 def log_task_updated(
     task_id: str,
-    changes: dict[str, tuple[Any, Any]],
+    changes: dict[str, Any],
     reason: str | None = None,
 ) -> None:
     write_audit({
         "timestamp": now_iso(),
         "action": "task_updated",
         "task_id": task_id,
-        "changes": {k: {"old": str(v[0])[:100], "new": str(v[1])[:100]} for k, v in changes.items()},
+        "changes": {k: {"new": str(v)[:100]} for k, v in changes.items()},
         "reason": reason,
     })
 

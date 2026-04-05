@@ -31,8 +31,13 @@ async function isAuthenticated(request: NextRequest): Promise<boolean> {
     return true;
   }
   const token = request.cookies.get("uwu_session")?.value;
-  const payload = await verifySessionToken(token);
-  return !!payload;
+  try {
+    const payload = await verifySessionToken(token);
+    return !!payload;
+  } catch (error) {
+    console.error("Session verification failed:", error);
+    return false;
+  }
 }
 
 export async function proxy(request: NextRequest) {

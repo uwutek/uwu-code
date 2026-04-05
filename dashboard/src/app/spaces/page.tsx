@@ -373,8 +373,8 @@ export default function SpacesPage() {
                         </div>
                       </div>
                       <div className="flex gap-1 flex-shrink-0">
-                        <button type="button" onClick={() => setEditingSpace(space)} className="px-2 py-1 text-xs rounded" style={{ color: "#4a5568" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#94a3b8")} onMouseLeave={(e) => (e.currentTarget.style.color = "#4a5568")}>Edit</button>
-                        <button type="button" onClick={() => handleDeleteSpace(space.id)} className="px-2 py-1 text-xs rounded" style={{ color: "#4a5568" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#ff4444")} onMouseLeave={(e) => (e.currentTarget.style.color = "#4a5568")}>Delete</button>
+                        <button type="button" aria-label="Edit space" onClick={() => setEditingSpace(space)} className="px-2 py-1 text-xs rounded" style={{ color: "#4a5568" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#94a3b8")} onMouseLeave={(e) => (e.currentTarget.style.color = "#4a5568")}>Edit</button>
+                        <button type="button" aria-label="Delete space" onClick={() => handleDeleteSpace(space.id)} className="px-2 py-1 text-xs rounded" style={{ color: "#4a5568" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#ff4444")} onMouseLeave={(e) => (e.currentTarget.style.color = "#4a5568")}>Delete</button>
                       </div>
                     </div>
 

@@ -886,6 +886,11 @@ interface GitHubIssueForQueue {
   milestone: { title: string } | null;
 }
 
+interface GitHubMilestoneForClose {
+  number: number;
+  title: string;
+}
+
 export default function SchedulerPage() {
   const [tasks, setTasks]         = useState<Task[]>([]);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>({ state: "stopped" });
@@ -896,6 +901,8 @@ export default function SchedulerPage() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [addingIssueId, setAddingIssueId] = useState<number | null>(null);
   const [addingMilestoneId, setAddingMilestoneId] = useState<number | null>(null);
+  const [closingIssueId, setClosingIssueId] = useState<number | null>(null);
+  const [closingMilestoneId, setClosingMilestoneId] = useState<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchAll = useCallback(async () => {
@@ -982,6 +989,39 @@ export default function SchedulerPage() {
       setAddingMilestoneId(null);
     }
   }, [fetchAll]);
+
+  const handleCloseIssue = useCallback(async (issue: GitHubIssueForQueue, _repoOwner: string, _repoName: string) => {
+    setClosingIssueId(issue.id);
+    try {
+      const res = await fetch("/api/github/close?url=" + encodeURIComponent(issue.html_url.replace(/\/issues\/\d+/, "")), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "close_issue", issueNumber: issue.number }),
+      });
+      if (!res.ok) throw new Error("Failed to close issue");
+    } catch (err) {
+      console.error("Failed to close issue:", err);
+    } finally {
+      setClosingIssueId(null);
+    }
+  }, []);
+
+  const handleCloseMilestone = useCallback(async (milestone: GitHubMilestoneForClose, repoOwner: string, repoName: string) => {
+    setClosingMilestoneId(milestone.number);
+    try {
+      const url = `https://github.com/${repoOwner}/${repoName}`;
+      const res = await fetch(`/api/github/close?url=${encodeURIComponent(url)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "close_milestone", milestoneNumber: milestone.number }),
+      });
+      if (!res.ok) throw new Error("Failed to close milestone");
+    } catch (err) {
+      console.error("Failed to close milestone:", err);
+    } finally {
+      setClosingMilestoneId(null);
+    }
+  }, []);
 
   async function deleteTask(id: string) {
     await fetch(`/api/scheduler/tasks/${id}`, { method: "DELETE" });
@@ -1114,6 +1154,10 @@ export default function SchedulerPage() {
         addingIssueId={addingIssueId}
         onAddMilestoneToQueue={handleAddMilestoneToQueue}
         addingMilestoneId={addingMilestoneId}
+        onCloseIssue={handleCloseIssue}
+        closingIssueId={closingIssueId}
+        onCloseMilestone={handleCloseMilestone}
+        closingMilestoneId={closingMilestoneId}
       />
 
       {/* Tabs */}

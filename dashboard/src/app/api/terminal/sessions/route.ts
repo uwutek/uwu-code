@@ -5,7 +5,6 @@ import {
   createTmuxSession,
   startSessionCleanup,
   updateSessionActivity,
-  killSession,
   MAX_SESSIONS,
 } from "@/lib/terminal-sessions";
 
@@ -21,7 +20,7 @@ export async function GET() {
   return NextResponse.json({ sessions: sessionList });
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   if (sessions.size >= MAX_SESSIONS) {
     return NextResponse.json(
       { error: `Maximum ${MAX_SESSIONS} concurrent sessions allowed` },
@@ -39,8 +38,8 @@ export async function POST(request: NextRequest) {
   });
 }
 
-export async function PATCH(request: NextRequest) {
-  const body = await request.json();
+export async function PATCH(_request: NextRequest) {
+  const body = await _request.json();
   const { id } = body as { id?: string };
   
   if (id && sessions.has(id)) {

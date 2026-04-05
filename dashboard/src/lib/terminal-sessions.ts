@@ -1,5 +1,4 @@
-import { spawn, execSync } from "child_process";
-import { randomUUID } from "crypto";
+import { execSync } from "child_process";
 
 const MAX_SESSIONS = 10;
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
@@ -71,6 +70,13 @@ let cleanupInterval: NodeJS.Timeout | null = null;
 export function startSessionCleanup() {
   if (cleanupInterval) return;
   cleanupInterval = setInterval(cleanupIdleSessions, 60 * 1000);
+}
+
+export function stopSessionCleanup() {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+  }
 }
 
 export { MAX_SESSIONS };

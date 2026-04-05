@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { Terminal } from "xterm";
+import { FitAddon } from "@xterm/addon-fit";
+
 import "xterm/css/xterm.css";
 
 interface Session {
@@ -8,9 +11,14 @@ interface Session {
   tmuxSession: string;
 }
 
+interface TerminalInstance {
+  term: Terminal;
+  fit: FitAddon;
+}
+
 export default function TerminalPage() {
   const terminalRef = useRef<HTMLDivElement>(null);
-  const terminalInstance = useRef<any>(null);
+  const terminalInstance = useRef<TerminalInstance | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [, setXtermLoaded] = useState(false);

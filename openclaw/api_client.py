@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import logging
+import json
 from typing import Any
 
 import httpx
@@ -71,7 +72,11 @@ class SchedulerClient:
                         )
                 else:
                     if response.content:
-                        return response.json()
+                        try:
+                            return response.json()
+                        except json.JSONDecodeError as e:
+                            log.error(f"API returned invalid JSON: {e}")
+                            return {}
                     return {}
             except httpx.TimeoutException as e:
                 log.warning(f"API {method} {url} timeout (attempt {attempt + 1}/{retries})")
