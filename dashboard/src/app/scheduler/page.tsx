@@ -875,6 +875,99 @@ function NewTaskForm({
   );
 }
 
+// ── Branch/PR Confirmation Modal ──────────────────────────────────────────────
+
+interface BranchPrModalState {
+  open: boolean;
+  issue: GitHubIssueForQueue | null;
+  milestone: { issues: GitHubIssueForQueue[]; title: string } | null;
+  projectPath: string;
+}
+
+function BranchPrModal({
+  state,
+  onConfirm,
+  onCancel,
+}: {
+  state: BranchPrModalState;
+  onConfirm: (useBranchPr: boolean) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div
+        className="w-full max-w-md flex flex-col rounded-lg overflow-hidden"
+        style={{ background: "var(--card)", border: "1px solid var(--border)" }}
+      >
+        <div className="px-5 py-4 border-b" style={{ borderColor: "var(--border)" }}>
+          <div className="text-sm font-semibold" style={{ color: "#ffd700" }}>
+            {state.milestone
+              ? `Queue milestone: ${state.milestone.title}`
+              : state.issue
+                ? `Queue: ${state.issue.title}`
+                : "Queue task"}
+          </div>
+          <div className="text-xs mt-1" style={{ color: "var(--dim)" }}>
+            Workspace: <span className="font-mono">{state.projectPath}</span>
+          </div>
+        </div>
+
+        <div className="px-5 py-4 space-y-3">
+          <div className="text-sm" style={{ color: "var(--text)" }}>
+            Should this task be done in a separate branch with a PR?
+          </div>
+          <div className="text-xs" style={{ color: "#4a5568" }}>
+            If yes, the agent will create a new branch, make changes, and open a pull request.
+          </div>
+        </div>
+
+        <div className="flex gap-2 px-5 py-3 border-t" style={{ borderColor: "var(--border)" }}>
+          <button
+            onClick={() => onConfirm(true)}
+            type="button"
+            className="flex-1 py-2 rounded text-sm font-semibold transition-opacity"
+            style={{
+              background: "rgba(0,212,255,0.15)",
+              color: "#00d4ff",
+              border: "1px solid rgba(0,212,255,0.3)",
+            }}
+          >
+            Yes — Branch + PR
+          </button>
+          <button
+            onClick={() => onConfirm(false)}
+            type="button"
+            className="flex-1 py-2 rounded text-sm font-semibold transition-opacity"
+            style={{
+              background: "rgba(0,255,136,0.15)",
+              color: "#00ff88",
+              border: "1px solid rgba(0,255,136,0.3)",
+            }}
+          >
+            No — Direct commit
+          </button>
+          <button
+            onClick={onCancel}
+            type="button"
+            className="px-4 py-2 rounded text-sm transition-opacity hover:opacity-70"
+            style={{ background: "var(--btn-bg)", color: "var(--dim)", border: "1px solid var(--input-border)" }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 interface GitHubIssueForQueue {
@@ -884,11 +977,6 @@ interface GitHubIssueForQueue {
   html_url: string;
   labels: Array<{ name: string; color: string }>;
   milestone: { title: string } | null;
-}
-
-interface GitHubMilestoneForClose {
-  number: number;
-  title: string;
 }
 
 export default function SchedulerPage() {
@@ -901,8 +989,12 @@ export default function SchedulerPage() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [addingIssueId, setAddingIssueId] = useState<number | null>(null);
   const [addingMilestoneId, setAddingMilestoneId] = useState<number | null>(null);
-  const [closingIssueId, setClosingIssueId] = useState<number | null>(null);
-  const [closingMilestoneId, setClosingMilestoneId] = useState<number | null>(null);
+  const [branchPrModal, setBranchPrModal] = useState<BranchPrModalState>({
+    open: false,
+    issue: null,
+    milestone: null,
+    projectPath: "",
+  });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchAll = useCallback(async () => {
@@ -929,98 +1021,88 @@ export default function SchedulerPage() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [fetchAll]);
 
-  const handleAddIssueToQueue = useCallback(async (issue: GitHubIssueForQueue, _repoOwner: string, _repoName: string) => {
-    setAddingIssueId(issue.id);
-    try {
-      const description = `GitHub Issue #${issue.number}: ${issue.title}\n\n${issue.html_url}`;
-      const res = await fetch("/api/scheduler/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "coding",
-          title: issue.title,
-          description,
-          schedule_mode: "anytime",
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to create task");
-      }
-      fetchAll();
-    } catch (err) {
-      console.error("Failed to add issue to queue:", err);
-    } finally {
-      setAddingIssueId(null);
-    }
-  }, [fetchAll]);
-
-  const handleAddMilestoneToQueue = useCallback(async (issues: GitHubIssueForQueue[], _repoOwner: string, _repoName: string) => {
-    if (issues.length === 0) return;
-    setAddingMilestoneId(Date.now());
-    try {
-      const results = await Promise.allSettled(
-        issues.map(async (issue) => {
-          const description = `GitHub Issue #${issue.number}: ${issue.title}\n\n${issue.html_url}`;
-          const res = await fetch("/api/scheduler/tasks", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              type: "coding",
-              title: issue.title,
-              description,
-              schedule_mode: "anytime",
-            }),
-          });
-          if (!res.ok) {
-            const data = await res.json();
-            throw new Error(data.error || "Failed to create task");
-          }
-        })
-      );
-      const failedCount = results.filter(r => r.status === "rejected").length;
-      if (failedCount > 0) {
-        console.error(`Failed to create ${failedCount} tasks out of ${issues.length}`);
-      }
-      fetchAll();
-    } catch (err) {
-      console.error("Failed to add milestone to queue:", err);
-    } finally {
-      setAddingMilestoneId(null);
-    }
-  }, [fetchAll]);
-
-  const handleCloseIssue = useCallback(async (issue: GitHubIssueForQueue, _repoOwner: string, _repoName: string) => {
-    setClosingIssueId(issue.id);
-    try {
-      const res = await fetch("/api/github/close?url=" + encodeURIComponent(issue.html_url.replace(/\/issues\/\d+/, "")), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "close_issue", issueNumber: issue.number }),
-      });
-      if (!res.ok) throw new Error("Failed to close issue");
-    } catch (err) {
-      console.error("Failed to close issue:", err);
-    } finally {
-      setClosingIssueId(null);
-    }
+  const handleAddIssueToQueue = useCallback((issue: GitHubIssueForQueue, _repoOwner: string, _repoName: string, projectPath: string) => {
+    setBranchPrModal({
+      open: true,
+      issue,
+      milestone: null,
+      projectPath,
+    });
   }, []);
 
-  const handleCloseMilestone = useCallback(async (milestone: GitHubMilestoneForClose, repoOwner: string, repoName: string) => {
-    setClosingMilestoneId(milestone.number);
-    try {
-      const url = `https://github.com/${repoOwner}/${repoName}`;
-      const res = await fetch(`/api/github/close?url=${encodeURIComponent(url)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "close_milestone", milestoneNumber: milestone.number }),
-      });
-      if (!res.ok) throw new Error("Failed to close milestone");
-    } catch (err) {
-      console.error("Failed to close milestone:", err);
-    } finally {
-      setClosingMilestoneId(null);
+  const handleBranchPrConfirm = useCallback(async (useBranchPr: boolean) => {
+    const { issue, milestone, projectPath } = branchPrModal;
+    setBranchPrModal({ open: false, issue: null, milestone: null, projectPath: "" });
+
+    if (milestone && milestone.issues.length > 0) {
+      setAddingMilestoneId(Date.now());
+      try {
+        const issuesList = milestone.issues.map(i => `- Issue #${i.number}: ${i.title}\n  ${i.html_url}`).join('\n');
+        let description = `Working on milestone "${milestone.title}".\n\nIssues to complete sequentially:\n${issuesList}`;
+        if (useBranchPr) {
+          description += `\n\nIMPORTANT: Create a new branch for this work. When all issues are resolved, open a pull request.`;
+        }
+        const title = `${milestone.title} - ${milestone.issues.length} issues`;
+
+        const res = await fetch("/api/scheduler/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "coding",
+            title,
+            description,
+            workspace: projectPath,
+            schedule_mode: "anytime",
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Failed to create task");
+        }
+        fetchAll();
+      } catch (err) {
+        console.error("Failed to add milestone to queue:", err);
+      } finally {
+        setAddingMilestoneId(null);
+      }
+    } else if (issue) {
+      setAddingIssueId(issue.id);
+      try {
+        let description = `GitHub Issue #${issue.number}: ${issue.title}\n\n${issue.html_url}`;
+        if (useBranchPr) {
+          description += `\n\nIMPORTANT: Create a new branch for this work. When done, open a pull request.`;
+        }
+        const res = await fetch("/api/scheduler/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "coding",
+            title: issue.title,
+            description,
+            workspace: projectPath,
+            schedule_mode: "anytime",
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Failed to create task");
+        }
+        fetchAll();
+      } catch (err) {
+        console.error("Failed to add issue to queue:", err);
+      } finally {
+        setAddingIssueId(null);
+      }
     }
+  }, [branchPrModal, fetchAll]);
+
+  const handleAddMilestoneToQueue = useCallback((issues: GitHubIssueForQueue[], milestoneTitle: string, _repoOwner: string, _repoName: string, projectPath: string) => {
+    setBranchPrModal({
+      open: true,
+      issue: null,
+      milestone: { issues, title: milestoneTitle },
+      projectPath,
+    });
   }, []);
 
   async function deleteTask(id: string) {
@@ -1154,10 +1236,6 @@ export default function SchedulerPage() {
         addingIssueId={addingIssueId}
         onAddMilestoneToQueue={handleAddMilestoneToQueue}
         addingMilestoneId={addingMilestoneId}
-        onCloseIssue={handleCloseIssue}
-        closingIssueId={closingIssueId}
-        onCloseMilestone={handleCloseMilestone}
-        closingMilestoneId={closingMilestoneId}
       />
 
       {/* Tabs */}
@@ -1235,6 +1313,15 @@ export default function SchedulerPage() {
 
       {/* Report modal */}
       {report && <ReportModal task={report} onClose={() => setReport(null)} />}
+
+      {/* Branch/PR confirmation modal */}
+      {branchPrModal.open && (
+        <BranchPrModal
+          state={branchPrModal}
+          onConfirm={handleBranchPrConfirm}
+          onCancel={() => setBranchPrModal({ open: false, issue: null, milestone: null, projectPath: "" })}
+        />
+      )}
     </div>
   );
 }
