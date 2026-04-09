@@ -317,9 +317,9 @@ else
 fi
 
 ###############################################################################
-# uwu-agent plugin (multi-agent orchestration for OpenCode)
+# oh-my-opencode plugin (Norse god agents, built from uwu-agent fork)
 ###############################################################################
-info "Installing uwu-agent plugin from source..."
+info "Building oh-my-opencode plugin from uwu-agent source..."
 UWU_AGENT_DIR="/opt/uwu-agent"
 if [ -d "$UWU_AGENT_DIR/.git" ]; then
   git -C "$UWU_AGENT_DIR" pull -q 2>/dev/null || true
@@ -328,20 +328,22 @@ else
   git clone --depth=1 https://github.com/uwutek/uwu-agent.git "$UWU_AGENT_DIR" -q
 fi
 cd "$UWU_AGENT_DIR"
+OPENCODE_HOME="/root/.opencode"
+mkdir -p "$OPENCODE_HOME"
 if command -v bun &>/dev/null; then
   bun install --frozen-lockfile >/dev/null 2>&1
   bun run build >/dev/null 2>&1
   bun run build:all >/dev/null 2>&1
-  bun add -g "$UWU_AGENT_DIR" >/dev/null 2>&1
-  bun add -g "$UWU_AGENT_DIR/packages/linux-x64" >/dev/null 2>&1 \
-    || bun add -g "$UWU_AGENT_DIR/packages/linux-arm64" >/dev/null 2>&1 || true
+  cd "$OPENCODE_HOME"
+  bun add "$UWU_AGENT_DIR" >/dev/null 2>&1
+  bun add "$UWU_AGENT_DIR/packages/linux-x64" >/dev/null 2>&1 \
+    || bun add "$UWU_AGENT_DIR/packages/linux-arm64" >/dev/null 2>&1 || true
 fi
-if bunx uwu-agent --version >/dev/null 2>&1; then
-  success "uwu-agent $(bunx uwu-agent --version 2>/dev/null | head -1) installed with Norse god agents."
-  bunx uwu-agent install --no-tui --claude=no --openai=no --gemini=no --copilot=no >/dev/null 2>&1 || true
+if [ -f "$OPENCODE_HOME/node_modules/oh-my-opencode/dist/index.js" ]; then
+  success "oh-my-opencode plugin built from uwu-agent fork (Norse god agents)."
 else
-  warn "uwu-agent build failed, falling back to oh-my-opencode from npm."
-  bun add -g oh-my-opencode >/dev/null 2>&1 || npm install -g oh-my-opencode >/dev/null 2>&1 || true
+  warn "Source build failed, installing oh-my-opencode from npm."
+  cd "$OPENCODE_HOME" && bun add oh-my-opencode >/dev/null 2>&1 || true
 fi
 
 if ! id -u uwu &>/dev/null; then
