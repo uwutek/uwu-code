@@ -331,10 +331,14 @@ cd "$UWU_AGENT_DIR"
 if command -v bun &>/dev/null; then
   bun install --frozen-lockfile >/dev/null 2>&1
   bun run build >/dev/null 2>&1
+  bun run build:all >/dev/null 2>&1
   bun add -g "$UWU_AGENT_DIR" >/dev/null 2>&1
+  bun add -g "$UWU_AGENT_DIR/packages/linux-x64" >/dev/null 2>&1 \
+    || bun add -g "$UWU_AGENT_DIR/packages/linux-arm64" >/dev/null 2>&1 || true
 fi
-if [ -f "$UWU_AGENT_DIR/dist/index.js" ]; then
-  success "uwu-agent plugin built and installed from source."
+if bunx uwu-agent --version >/dev/null 2>&1; then
+  success "uwu-agent $(bunx uwu-agent --version 2>/dev/null | head -1) installed with Norse god agents."
+  bunx uwu-agent install --no-tui --claude=no --openai=no --gemini=no --copilot=no >/dev/null 2>&1 || true
 else
   warn "uwu-agent build failed, falling back to oh-my-opencode from npm."
   bun add -g oh-my-opencode >/dev/null 2>&1 || npm install -g oh-my-opencode >/dev/null 2>&1 || true
