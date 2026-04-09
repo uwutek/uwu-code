@@ -44,12 +44,14 @@ async function signValue(value: string): Promise<string> {
 interface SessionPayload {
   username: string;
   exp: number;
+  stid: string;
 }
 
-export async function createSessionToken(username: string): Promise<string> {
+export async function createSessionToken(username: string, sessionTokenId: string): Promise<string> {
   const payload: SessionPayload = {
     username,
     exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SECONDS,
+    stid: sessionTokenId,
   };
   const payloadRaw = JSON.stringify(payload);
   const payloadEncoded = toBase64Url(new TextEncoder().encode(payloadRaw));
@@ -57,7 +59,7 @@ export async function createSessionToken(username: string): Promise<string> {
   return `${payloadEncoded}.${signature}`;
 }
 
-export async function verifySessionToken(token: string | undefined): Promise<SessionPayload | null> {
+export async function verifySessionToken(token: string | undefined, currentSessionTokenId?: string): Promise<SessionPayload | null> {
   if (!token) return null;
   const [payloadEncoded, signature] = token.split(".");
   if (!payloadEncoded || !signature) return null;
@@ -78,6 +80,7 @@ export async function verifySessionToken(token: string | undefined): Promise<Ses
     if (typeof payload.username !== "string" || payload.username.trim().length === 0) return null;
     if (typeof payload.exp !== "number") return null;
     if (payload.exp <= Math.floor(Date.now() / 1000)) return null;
+    if (currentSessionTokenId && payload.stid !== currentSessionTokenId) return null;
     return payload;
   } catch {
     return null;

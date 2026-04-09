@@ -6,6 +6,9 @@ const LOGIN_PATH = "/login";
 const PUBLIC_API_PATHS = new Set([
   "/api/auth/login",
   "/api/auth/check",
+]);
+
+const AGENT_BOOTSTRAP_PATHS = new Set([
   "/api/settings/agent-key",
 ]);
 
@@ -35,7 +38,8 @@ async function isAuthenticated(request: NextRequest): Promise<boolean> {
   }
   const token = request.cookies.get("uwu_session")?.value;
   try {
-    const payload = await verifySessionToken(token);
+    const settings = readSettings();
+    const payload = await verifySessionToken(token, settings.session_token);
     return !!payload;
   } catch (error) {
     console.error("Session verification failed:", error);
@@ -52,6 +56,15 @@ export async function proxy(request: NextRequest) {
 
   if (PUBLIC_API_PATHS.has(pathname)) {
     return NextResponse.next();
+  }
+
+  if (AGENT_BOOTSTRAP_PATHS.has(pathname)) {
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+      || request.headers.get("x-real-ip")
+      || "";
+    if (ip === "127.0.0.1" || ip === "::1" || ip === "localhost" || ip === "") {
+      return NextResponse.next();
+    }
   }
 
   const authenticated = await isAuthenticated(request);

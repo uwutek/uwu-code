@@ -45,7 +45,7 @@ export async function checkAuth(req: NextRequest): Promise<boolean> {
   const settings = readSettings();
   if (!settings.username) return false;
   const token = req.cookies.get("uwu_session")?.value;
-  const payload = await verifySessionToken(token);
+  const payload = await verifySessionToken(token, settings.session_token);
   return !!payload && payload.username === settings.username;
 }
 

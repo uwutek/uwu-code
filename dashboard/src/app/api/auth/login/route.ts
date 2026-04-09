@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
     if (!settings.username) {
       const serverSessionToken = generateToken();
-      const cookieToken = await createSessionToken(userTrimmed);
+      const cookieToken = await createSessionToken(userTrimmed, serverSessionToken);
       writeSettings({
         ...settings,
         username: userTrimmed,
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     }
 
     const serverSessionToken = generateToken();
-    const cookieToken = await createSessionToken(settings.username);
+    const cookieToken = await createSessionToken(settings.username, serverSessionToken);
     writeSettings({ ...settings, session_token: serverSessionToken });
 
     const res = NextResponse.json({ ok: true });
